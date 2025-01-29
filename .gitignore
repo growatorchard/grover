@@ -1,5 +1,7 @@
 .streamlit/
 venv/
-grover
-community_details
+grover.db
+community_details.db
 .env
+.DS_Store
+t.txt

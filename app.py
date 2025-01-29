@@ -452,7 +452,7 @@ def format_keyword_report(keyword_data):
 
 
 # --------------------------------------------------------------------
-# 3) Anthropic’s Claude Query
+# 3) Anthropic's Claude Query
 # --------------------------------------------------------------------
 def query_claude_api(message: str) -> str:
     """
@@ -898,14 +898,34 @@ if st.session_state["project_id"]:
                 main_kw = data["main_keyword"]
                 related_kws = data["related_keywords"]
                 if main_kw:
-                    st.markdown(
+                    col1, col2 = st.columns([8,1])
+                    col1.markdown(
                         f"**Main Keyword**: {main_kw['Ph']} "
                         f"(Volume={main_kw['Vo']}, Diff={main_kw['Kd']})"
                     )
+                    if col2.button("➕", key=f"add_main_{main_kw['Ph']}"):
+                        db.add_keyword(
+                            st.session_state["project_id"],
+                            main_kw['Ph'],
+                            main_kw['Vo'],
+                            None,  # search_intent
+                            main_kw['Kd']
+                        )
+                        st.rerun()
                 if related_kws:
                     st.write("**Related Keywords**:")
                     for rk in related_kws:
-                        st.write(f"- {rk['Ph']} (Vol={rk['Vo']}, Diff={rk['Kd']})")
+                        col1, col2 = st.columns([8,1])
+                        col1.write(f"- {rk['Ph']} (Vol={rk['Vo']}, Diff={rk['Kd']})")
+                        if col2.button("➕", key=f"add_rel_{rk['Ph']}"):
+                            db.add_keyword(
+                                st.session_state["project_id"],
+                                rk['Ph'],
+                                rk['Vo'],
+                                None,  # search_intent
+                                rk['Kd']
+                            )
+                            st.rerun()
 
 
 # 3) Article Brief
