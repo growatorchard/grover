@@ -1,0 +1,5 @@
+.streamlit/
+venv/
+grover
+community_details
+.env
