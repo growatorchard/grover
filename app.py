@@ -942,7 +942,82 @@ if st.session_state["project_id"]:
             st.success("Brief saved (in session).")
 
 
+# --------------------------------------------------------------------
 # 4) Generate & Refine (Claude)
+# --------------------------------------------------------------------
+def generate_article_with_validation(prompt_msg, keywords, max_attempts=5, debug_mode=False):
+    """
+    Each attempt will just re-run the SAME prompt from scratch.
+    If at any attempt we pass all validations, we return that result immediately.
+    If after max_attempts we still haven't passed, we'll return
+    the final attempt's output (parsed if possible, otherwise raw).
+    """
+    final_attempt_output = ""
+    final_attempt_parsed = {}
+
+    for attempt in range(1, max_attempts + 1):
+        with st.spinner(f"Generating article & meta from Claude (Attempt {attempt}/{max_attempts})..."):
+            output = query_claude_api(prompt_msg)
+            final_attempt_output = output  # Store for potential final usage
+
+            # Try parsing the output as JSON
+            try:
+                start_idx = output.find('{')
+                end_idx = output.rfind('}')
+                if start_idx == -1 or end_idx == -1:
+                    raise json.JSONDecodeError("No valid JSON object found", output, 0)
+
+                json_str = output[start_idx:end_idx + 1]
+                parsed = json.loads(json_str)
+                final_attempt_parsed = parsed  # So we have something to return if we fail validation
+
+                generated_article = parsed.get("article", "").strip()
+                generated_title = parsed.get("meta_title", "").strip()
+                generated_desc = parsed.get("meta_description", "").strip()
+
+                # Basic validation checks
+                if not generated_article or not generated_title or not generated_desc:
+                    if debug_mode:
+                        st.write(f"Attempt {attempt}: Missing required fields.")
+                    continue
+
+                # Word count check
+                if len(generated_article.split()) < 1000:
+                    if debug_mode:
+                        st.write(f"Attempt {attempt}: Word count too low.")
+                    continue
+
+                # Keywords check
+                lower_article = generated_article.lower()
+                missing = [kw for kw in keywords if kw.lower() not in lower_article]
+                if missing:
+                    if debug_mode:
+                        st.write(f"Attempt {attempt}: Missing keywords: {missing}")
+                    continue
+
+                # If we reach here, it means we pass all validations
+                return generated_article, generated_title, generated_desc
+
+            except json.JSONDecodeError:
+                if debug_mode:
+                    st.write(f"Attempt {attempt}: Could not parse JSON.")
+                continue
+
+    # If we get here, all attempts have failed
+    st.error(f"Failed to produce a valid article after {max_attempts} attempts.")
+    # Attempt to return final attempt's data if it was at least partially parseable
+    if final_attempt_parsed:
+        article_text = final_attempt_parsed.get("article", "").strip()
+        meta_title = final_attempt_parsed.get("meta_title", "").strip()
+        meta_desc = final_attempt_parsed.get("meta_description", "").strip()
+
+        st.info("Showing final attempt's output below, even if it didn't meet validation:")
+        return article_text, meta_title, meta_desc
+    else:
+        # We couldn't parse final attempt at all; just return the raw text
+        return final_attempt_output, "", ""
+
+
 if st.session_state["project_id"]:
     with st.expander("4) Generate & Refine Article (Claude)"):
 
@@ -995,125 +1070,31 @@ The meta description should be 150-160 characters.
 REMEMBER: Return ONLY the JSON object. No other text or explanations.
 """
 
-            def generate_article_with_validation(prompt_msg, keywords, max_attempts=10, debug_mode=False):
-                """Generate article content with validation and retry logic"""
-                attempt = 1
-                current_article = ""
-                
-                while attempt <= max_attempts:
-                    with st.spinner(f"Generating article & meta from Claude (Attempt {attempt}/{max_attempts})..."):
-                        # If we have a partial article, modify the prompt to continue it
-                        if current_article:
-                            continuation_prompt = f"""
-IMPORTANT: You must return a valid JSON object with exactly this structure:
-{{
-  "article": "Your article text here",
-  "meta_title": "Your SEO title here",
-  "meta_description": "Your meta description here"
-}}
+            # ---- Call our simplified function ----
+            article_text, meta_title, meta_desc = generate_article_with_validation(
+                prompt_msg=prompt_msg, 
+                keywords=keywords, 
+                max_attempts=5, 
+                debug_mode=debug_mode
+            )
 
-The previous generated article was too short ({len(current_article.split())} words).
-Please continue and expand this article to reach at least 1000 words.
+            # Create new article if needed
+            if not st.session_state["article_id"]:
+                final_title = new_article_name.strip() if new_article_name.strip() else "(Generated Draft)"
+                new_art_id = db.save_article_content(
+                    project_id=st.session_state["project_id"],
+                    article_title=final_title,
+                    article_content=""
+                )
+                st.session_state["article_id"] = new_art_id
 
-Current article content:
-{current_article}
+            # Store in session state
+            current_aid = st.session_state["article_id"]
+            set_current_draft(current_aid, article_text or "")
+            set_meta_title(current_aid, meta_title or "")
+            set_meta_desc(current_aid, meta_desc or "")
 
-Requirements:
-1. Keep the existing content
-2. Add more detailed sections
-3. Maintain consistent style and formatting
-4. Include all keywords: {keywords}
-5. Return ONLY the JSON object with the complete expanded article
-
-The meta title should be 50-60 characters.
-The meta description should be 150-160 characters.
-
-REMEMBER: Return ONLY the JSON object. No other text or explanations.
-"""
-                            output = query_claude_api(continuation_prompt)
-                        else:
-                            output = query_claude_api(prompt_msg)
-                        
-                        try:
-                            # Find JSON content between first { and last }
-                            start_idx = output.find('{')
-                            end_idx = output.rfind('}')
-                            if start_idx != -1 and end_idx != -1:
-                                json_str = output[start_idx:end_idx + 1]
-                                parsed = json.loads(json_str)
-                            
-                            # Extract and clean the components
-                            generated_article = parsed.get("article", "").strip()
-                            generated_title = parsed.get("meta_title", "").strip()
-                            generated_desc = parsed.get("meta_description", "").strip()
-                            
-                            # Update current article if we're continuing
-                            if current_article:
-                                generated_article = current_article + "\n\n" + generated_article
-                            
-                            # Basic validation
-                            if not generated_article or not generated_title or not generated_desc:
-                                if debug_mode:
-                                    st.write(f"Attempt {attempt}: Missing required fields")
-                                attempt += 1
-                                continue
-                            
-                            # Word count check
-                            word_count = len(generated_article.split())
-                            if word_count < 1000:
-                                if debug_mode:
-                                    st.write(f"Attempt {attempt}: Word count too low ({word_count})")
-                                current_article = generated_article  # Save the current content
-                                attempt += 1
-                                continue
-                            
-                            # Case-insensitive keyword check
-                            article_lower = generated_article.lower()
-                            missing_keywords = [
-                                kw for kw in keywords 
-                                if kw.lower().strip() not in article_lower
-                            ]
-                            
-                            if missing_keywords:
-                                if debug_mode:
-                                    st.write(f"Attempt {attempt}: Missing keywords: {', '.join(missing_keywords)}")
-                                attempt += 1
-                                continue
-                            
-                            return generated_article, generated_title, generated_desc
-                            
-                        except json.JSONDecodeError as e:
-                            if debug_mode:
-                                st.write(f"Attempt {attempt}: JSON parsing error: {str(e)}")
-                            attempt += 1
-                            continue
-                    
-                    if attempt > max_attempts:
-                        st.error(f"Failed to generate valid content after {max_attempts} attempts")
-                        return None, None, None
-                
-                return None, None, None
-
-            result = generate_article_with_validation(prompt_msg, keywords, max_attempts=10, debug_mode=debug_mode)
-            if result != (None, None, None):
-                generated_article, generated_title, generated_desc = result
-                # Create new article if needed
-                if not st.session_state["article_id"]:
-                    final_title = new_article_name.strip() if new_article_name.strip() else "(Generated Draft)"
-                    new_art_id = db.save_article_content(
-                        project_id=st.session_state["project_id"],
-                        article_title=final_title,
-                        article_content=""
-                    )
-                    st.session_state["article_id"] = new_art_id
-
-                # Store in session state
-                current_aid = st.session_state["article_id"]
-                set_current_draft(current_aid, generated_article)
-                set_meta_title(current_aid, generated_title)
-                set_meta_desc(current_aid, generated_desc)
-
-                st.success("Article, meta title, and meta description generated successfully!")
+            st.success("Article (possibly partial), meta title, and meta description have been set in the UI!")
 
         # Now show refine UI only if we have an article_id
         article_id = st.session_state["article_id"]
@@ -1251,9 +1232,6 @@ if debug_mode:
 # 7) Community Feature (NEW)
 # --------------------------------------------------------------------
 
-# In a real scenario, you'd create/structure your Community DB similarly to 'grover.db'.
-# For now, we just try to connect to 'community_details.db' and handle the failure gracefully.
-
 def connect_to_community_db(db_path="community_details.db"):
     """
     Attempt to connect to the community_details.db database.
@@ -1312,6 +1290,7 @@ with st.expander("7) Select a Community to Feature"):
         community_conn.close()
     else:
         st.warning("Community DB connection failed (this is expected until 'community_details.db' is created).")
+
 
 def validate_article_requirements(text: str, required_keywords: list, min_words: int = 1000) -> tuple[bool, str]:
     """
