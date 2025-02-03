@@ -1171,8 +1171,8 @@ def generate_section_with_retries(prompt_msg, section_num, total_sections, previ
     words_per_section = internal_target // total_sections
     
     # Allow 50% less or more than the doubled target
-    min_acceptable_words = int(words_per_section * 0.5)  # 50% of target
-    max_acceptable_words = int(words_per_section * 1.5)  # 150% of target
+    min_acceptable_words = int(words_per_section * 0.2)  # 50% of target
+    max_acceptable_words = int(words_per_section * 2.0)  # 150% of target
     
     # Create a progress placeholder
     progress_text = st.empty()
