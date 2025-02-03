@@ -64,7 +64,6 @@ class DatabaseManager:
                     ON DELETE CASCADE
             );
 
-            /* Removed UNIQUE from project_id here to allow multiple articles per project */
             CREATE TABLE IF NOT EXISTS base_article_content (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
@@ -308,7 +307,6 @@ def build_semrush_url(api_type, phrase, api_key, database='us',
 
     query_str = '&'.join([f"{k}={requests.utils.quote(str(v))}" for k,v in params.items()])
     full_url = f"{base_url}/?{query_str}"
-
     return full_url
 
 def parse_semrush_response(response_text, debug_mode=False):
@@ -454,9 +452,9 @@ def format_keyword_report(keyword_data):
 # --------------------------------------------------------------------
 # 3) Anthropic's Claude Query
 # --------------------------------------------------------------------
-def query_claude_api(message: str) -> str:
+def query_claude_api(message: str, conversation_history: list = None) -> str:
     """
-    Calls Anthropic's /v1/messages endpoint with a user message.
+    Calls Anthropic's /v1/messages endpoint with conversation history support.
     Requires st.secrets['ANTHROPIC_API_KEY'] to be set.
     """
     url = 'https://api.anthropic.com/v1/messages'
@@ -471,34 +469,40 @@ def query_claude_api(message: str) -> str:
         'content-type': 'application/json',
     }
 
+    # Build messages array from conversation history
+    messages = []
+    if conversation_history:
+        messages.extend(conversation_history)
+    messages.append({
+        'role': 'user',
+        'content': message
+    })
+
     payload = {
-        'model': 'claude-3-5-sonnet-20241022',  # or whichever model version you have access to
+        'model': 'claude-3-5-sonnet-20241022',
         'max_tokens': 5000,
-        'messages': [
-            {
-                'role': 'user',
-                'content': message
-            }
-        ]
+        'messages': messages
     }
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
         response.raise_for_status()
         response_data = response.json()
-
+        
         if 'content' in response_data:
-            # Some Anthropic responses might return 'content' as a single string
-            # or as a list of segments. We handle both.
-            if isinstance(response_data['content'], list):
-                return ''.join(block.get('text', '') for block in response_data['content'])
-            return response_data['content']
-
-        if 'message' in response_data:
-            content = response_data['message'].get('content', [])
+            content = response_data['content']
             if isinstance(content, list):
-                return ''.join(block.get('text', '') for block in content)
-            return str(content)
+                text = ''.join(block.get('text', '') for block in content)
+            else:
+                text = str(content)
+            
+            # Add the response to conversation history if provided
+            if conversation_history is not None:
+                conversation_history.append({
+                    'role': 'assistant',
+                    'content': text
+                })
+            return text
 
         return "Could not extract content from Anthropic response."
 
@@ -507,8 +511,62 @@ def query_claude_api(message: str) -> str:
         if hasattr(e, 'response') and e.response is not None:
             error_message += f"\nResponse: {e.response.text}"
         return error_message
-    except (KeyError, ValueError) as e:
-        return f"Error parsing response: {str(e)}"
+
+def query_groq_api(message: str, conversation_history: list = None) -> str:
+    """
+    Calls Groq's API endpoint with conversation history support.
+    Requires st.secrets['GROQ_API_KEY'] to be set.
+    """
+    url = 'https://api.groq.com/openai/v1/chat/completions'
+    try:
+        api_key = st.secrets['GROQ_API_KEY']
+    except:
+        return "Error: No GROQ_API_KEY found in st.secrets."
+
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+
+    # Build messages array from conversation history
+    messages = []
+    if conversation_history:
+        messages.extend(conversation_history)
+    messages.append({
+        'role': 'user',
+        'content': message
+    })
+
+    payload = {
+        'model': 'llama-70b-v2',
+        'messages': messages,
+        'temperature': 0.7,
+        'max_tokens': 4096
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response.raise_for_status()
+        response_data = response.json()
+        
+        if 'choices' in response_data and len(response_data['choices']) > 0:
+            content = response_data['choices'][0]['message']['content']
+            
+            # Add the response to conversation history if provided
+            if conversation_history is not None:
+                conversation_history.append({
+                    'role': 'assistant',
+                    'content': content
+                })
+            return content
+
+        return "Could not extract content from Groq response."
+
+    except requests.exceptions.RequestException as e:
+        error_message = f"API request failed: {str(e)}"
+        if hasattr(e, 'response') and e.response is not None:
+            error_message += f"\nResponse: {e.response.text}"
+        return error_message
 
 
 # --------------------------------------------------------------------
@@ -544,10 +602,17 @@ def scrape_website(url):
 # --------------------------------------------------------------------
 
 db = DatabaseManager()
-st.set_page_config(page_title="Grover (Claude + SEMrush)", layout="wide")
-st.title("Grover: Claude-based, with SEMrush Keyword Research")
+st.set_page_config(page_title="Grover (LLM's + SEMrush)", layout="wide")
+st.title("Grover: LLM Based, with SEMrush Keyword Research")
 
 debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
+
+# Add model selector
+model_options = {
+    "Claude": "claude-3-5-sonnet-20241022",
+    "Groq (Llama-70B)": "llama-70b-v2"
+}
+st.session_state['selected_model'] = st.sidebar.selectbox("Select Model", list(model_options.keys()))
 
 # Predefined dropdown options
 journey_stage_options = ["Awareness", "Consideration", "Decision", "Retention", "Advocacy", "Other"]
@@ -602,6 +667,9 @@ if "meta_title_by_article" not in st.session_state:
 
 if "meta_desc_by_article" not in st.session_state:
     st.session_state["meta_desc_by_article"] = {}
+
+if "section_conversations" not in st.session_state:
+    st.session_state.section_conversations = {}
 
 def get_current_draft(aid):
     return st.session_state["drafts_by_article"].get(aid, "")
@@ -698,25 +766,22 @@ with st.expander("1) Create or Update Project", expanded=(st.session_state["proj
             def_need = existing_notes.get("consumer_need", "")
             def_tone = existing_notes.get("tone_of_voice", "")
             def_audience = existing_notes.get("target_audience", "")
+            def_topic = existing_notes.get("topic", "")
+            freeform_notes = existing_notes.get("freeform_notes", "")
 
             upd_name = st.text_input("Project Name", value=proj_data["name"])
-
             upd_journey = dynamic_selectbox("Consumer Journey Stage", journey_stage_options, proj_data.get("journey_stage", "Awareness"))
             upd_category = dynamic_selectbox("Article Category", article_category_options, proj_data.get("category", "Senior Living"))
             upd_care_areas = dynamic_multiselect("Care Area(s)", care_area_options, existing_care_areas)
             upd_format = dynamic_selectbox("Format Type", format_type_options, proj_data.get("format_type", "Blog"))
             upd_bizcat = dynamic_selectbox("Business Category", business_category_options, proj_data.get("business_category", "Senior Living"))
-
             upd_need = dynamic_selectbox("Consumer Need", consumer_need_options, def_need)
             upd_tone = dynamic_selectbox("Tone of Voice", tone_of_voice_options, def_tone)
             upd_audience = dynamic_selectbox("Target Audience", target_audience_options, def_audience)
 
-            freeform_notes = existing_notes.get("freeform_notes", "")
+            st.write("#### Topic & Freeform Notes")
+            upd_topic = st.text_input("Topic (Optional)", value=def_topic)
             upd_notes_text = st.text_area("Additional Notes", value=freeform_notes)
-
-            st.write("#### Project Topic")
-            def_topic = existing_notes.get("topic", "")
-            user_topic_input = st.text_input("Enter a Topic", value=def_topic)
 
             if st.button("Generate 5 Topics"):
                 prompt_for_topics = f"""
@@ -741,7 +806,7 @@ Suggest 5 potential article topics.
             if st.session_state["topic_suggestions"]:
                 chosen_suggestion = st.selectbox("Choose a generated topic:", st.session_state["topic_suggestions"])
                 if st.button("Use Selected Topic"):
-                    user_topic_input = chosen_suggestion
+                    upd_topic = chosen_suggestion
                     st.session_state["topic_suggestions"] = []
                     st.success(f"Topic set to: {chosen_suggestion}")
 
@@ -751,7 +816,7 @@ Suggest 5 potential article topics.
                     "tone_of_voice": upd_tone,
                     "target_audience": upd_audience,
                     "freeform_notes": upd_notes_text,
-                    "topic": user_topic_input,
+                    "topic": upd_topic,
                 }
 
                 patch = {
@@ -763,7 +828,6 @@ Suggest 5 potential article topics.
                     "business_category": upd_bizcat,
                     "notes": json.dumps(final_notes_json),
                 }
-
                 db.update_project_state(proj_data["id"], patch)
                 st.success("Project updated.")
 
@@ -777,14 +841,13 @@ Suggest 5 potential article topics.
         new_care_areas = dynamic_multiselect("Care Area(s)", care_area_options, [])
         new_format = dynamic_selectbox("Format Type", format_type_options, "Blog")
         new_bizcat = dynamic_selectbox("Business Category", business_category_options, "Senior Living")
-
         new_need = dynamic_selectbox("Consumer Need", consumer_need_options, "Educational")
         new_tone = dynamic_selectbox("Tone of Voice", tone_of_voice_options, "Professional")
         new_audience = dynamic_selectbox("Target Audience", target_audience_options, "Seniors")
-        new_notes_text = st.text_area("Additional Notes (optional)")
 
-        st.write("#### Project Topic")
-        topic_input = st.text_input("Enter a Topic (optional)")
+        st.write("#### Topic & Freeform Notes")
+        new_topic = st.text_input("Topic (Optional)")
+        new_notes_text = st.text_area("Additional Notes (optional)")
 
         if "topic_suggestions" not in st.session_state:
             st.session_state["topic_suggestions"] = []
@@ -811,7 +874,7 @@ Suggest 5 potential article topics.
         if st.session_state["topic_suggestions"]:
             chosen_suggestion = st.selectbox("Choose a generated topic:", st.session_state["topic_suggestions"])
             if st.button("Use Selected Topic"):
-                topic_input = chosen_suggestion
+                new_topic = chosen_suggestion
                 st.success(f"Topic set to: {chosen_suggestion}")
                 st.session_state["topic_suggestions"] = []
 
@@ -822,7 +885,7 @@ Suggest 5 potential article topics.
                     "tone_of_voice": new_tone,
                     "target_audience": new_audience,
                     "freeform_notes": new_notes_text,
-                    "topic": topic_input.strip(),
+                    "topic": new_topic.strip(),
                 }
                 p_data = {
                     "name": new_name.strip(),
@@ -945,12 +1008,26 @@ if st.session_state["project_id"]:
 # --------------------------------------------------------------------
 # 4) Generate & Refine (Claude)
 # --------------------------------------------------------------------
+def clean_article_text(content, debug_mode=False):
+    """Remove word count markers and keyword markers from article text (if desired)."""
+    if not content:
+        return ""
+    if debug_mode:
+        # If debug mode, keep markers so we can see them
+        return content
+    # Remove the numeric markers like (1), (2), etc. but keep any real parentheses from text?
+    # This might be a simple approach:
+    cleaned = re.sub(r"\(\d+\)", "", content)
+    # Keep (keyword) references or remove them?
+    # If you want to remove (keyword) as well, uncomment:
+    # cleaned = re.sub(r"\(keyword\)", "", cleaned)
+    return cleaned
+
 def generate_article_with_validation(prompt_msg, keywords, max_attempts=5, debug_mode=False):
     """
-    Each attempt will just re-run the SAME prompt from scratch.
-    If at any attempt we pass all validations, we return that result immediately.
-    If after max_attempts we still haven't passed, we'll return
-    the final attempt's output (parsed if possible, otherwise raw).
+    Each attempt re-runs the SAME prompt from scratch.
+    If at any attempt we pass certain validations (like including keywords),
+    return that result. Otherwise, after max_attempts, return the final attempt's data.
     """
     final_attempt_output = ""
     final_attempt_parsed = {}
@@ -958,7 +1035,7 @@ def generate_article_with_validation(prompt_msg, keywords, max_attempts=5, debug
     for attempt in range(1, max_attempts + 1):
         with st.spinner(f"Generating article & meta from Claude (Attempt {attempt}/{max_attempts})..."):
             output = query_claude_api(prompt_msg)
-            final_attempt_output = output  # Store for potential final usage
+            final_attempt_output = output  # Store for final usage
 
             # Try parsing the output as JSON
             try:
@@ -969,25 +1046,19 @@ def generate_article_with_validation(prompt_msg, keywords, max_attempts=5, debug
 
                 json_str = output[start_idx:end_idx + 1]
                 parsed = json.loads(json_str)
-                final_attempt_parsed = parsed  # So we have something to return if we fail validation
+                final_attempt_parsed = parsed
 
                 generated_article = parsed.get("article", "").strip()
                 generated_title = parsed.get("meta_title", "").strip()
                 generated_desc = parsed.get("meta_description", "").strip()
 
-                # Basic validation checks
+                # Basic checks
                 if not generated_article or not generated_title or not generated_desc:
                     if debug_mode:
                         st.write(f"Attempt {attempt}: Missing required fields.")
                     continue
 
-                # Word count check
-                if len(generated_article.split()) < 1000:
-                    if debug_mode:
-                        st.write(f"Attempt {attempt}: Word count too low.")
-                    continue
-
-                # Keywords check
+                # Check that all keywords appear
                 lower_article = generated_article.lower()
                 missing = [kw for kw in keywords if kw.lower() not in lower_article]
                 if missing:
@@ -995,7 +1066,7 @@ def generate_article_with_validation(prompt_msg, keywords, max_attempts=5, debug
                         st.write(f"Attempt {attempt}: Missing keywords: {missing}")
                     continue
 
-                # If we reach here, it means we pass all validations
+                # If all checks pass, return the article
                 return generated_article, generated_title, generated_desc
 
             except json.JSONDecodeError:
@@ -1003,23 +1074,185 @@ def generate_article_with_validation(prompt_msg, keywords, max_attempts=5, debug
                     st.write(f"Attempt {attempt}: Could not parse JSON.")
                 continue
 
-    # If we get here, all attempts have failed
-    st.error(f"Failed to produce a valid article after {max_attempts} attempts.")
-    # Attempt to return final attempt's data if it was at least partially parseable
+    # If all attempts fail, return the final attempt's best-guess data
+    st.error(f"Failed to produce a valid JSON after {max_attempts} attempts.")
     if final_attempt_parsed:
         article_text = final_attempt_parsed.get("article", "").strip()
         meta_title = final_attempt_parsed.get("meta_title", "").strip()
         meta_desc = final_attempt_parsed.get("meta_description", "").strip()
-
-        st.info("Showing final attempt's output below, even if it didn't meet validation:")
+        st.info("Showing final attempt's partial output below (validation not passed):")
         return article_text, meta_title, meta_desc
     else:
-        # We couldn't parse final attempt at all; just return the raw text
+        # Could not parse final attempt at all
         return final_attempt_output, "", ""
+
+def generate_section(prompt_msg, section_num, total_sections, previous_sections="", words_so_far=0, target_words=1200, debug_mode=False):
+    """Generate a single section of the article."""
+    # Calculate words per section
+    words_per_section = target_words // total_sections
+    remaining_words = target_words - words_so_far
+    
+    # Get or create conversation history for this section
+    if section_num not in st.session_state.section_conversations:
+        st.session_state.section_conversations[section_num] = []
+    
+    conversation = st.session_state.section_conversations[section_num]
+    
+    section_prompt = f"""
+You are writing a highly focused article based on these requirements:
+{prompt_msg}
+
+STRICT REQUIREMENTS:
+1. Stay focused on the main topic and brief provided above
+2. Follow the project details exactly as specified
+3. Maintain consistent tone and style throughout
+4. Include relevant keywords naturally
+
+Current Progress:
+- This is section {section_num} of {total_sections}
+- Previous sections: 
+{previous_sections}
+
+For this section {section_num}:
+- Target word count: ~{words_per_section} words
+- Remaining total words: {remaining_words}
+- Must continue logically from previous sections
+- Must stay focused on the main topic
+
+Format Requirements:
+1. Start with '## ' followed by an appropriate section title
+2. Mark all specified keywords with (keyword)
+3. Mark all other words with sequential numbers: (1), (2), etc.
+4. Ensure content flows naturally from previous sections
+
+Return ONLY a JSON object with this structure:
+{{
+    "section_content": "The section content with markers",
+    "section_title": "The title used for this section"
+}}"""
+    
+    if debug_mode:
+        st.write(f"### Debug: Full Prompt for Section {section_num}")
+        st.code(section_prompt, language="text")
+    
+    response = query_claude_api(section_prompt, conversation)
+    
+    if debug_mode:
+        st.write(f"### Debug: LLM Response for Section {section_num}")
+        st.code(response, language="text")
+    
+    try:
+        parsed = json.loads(response)
+        
+        if not all(k in parsed for k in ["section_content", "section_title"]):
+            if debug_mode:
+                st.error("Missing required fields in JSON response")
+            return None
+            
+        word_count = len(parsed["section_content"].split())
+        parsed["word_count"] = word_count
+            
+        return parsed
+    except json.JSONDecodeError as e:
+        if debug_mode:
+            st.error(f"JSON parsing error: {str(e)}")
+        return None
+    except Exception as e:
+        if debug_mode:
+            st.error(f"Unexpected error: {str(e)}")
+        return None
+
+def generate_section_with_retries(prompt_msg, section_num, total_sections, previous_sections="", words_so_far=0, target_words=1000, debug_mode=False, max_attempts=50):
+    """Generate a single section with multiple retry attempts."""
+    last_response = None
+    
+    # Double the target words internally
+    internal_target = target_words * 2
+    words_per_section = internal_target // total_sections
+    
+    # Allow 50% less or more than the doubled target
+    min_acceptable_words = int(words_per_section * 0.5)  # 50% of target
+    max_acceptable_words = int(words_per_section * 1.5)  # 150% of target
+    
+    # Create a progress placeholder
+    progress_text = st.empty()
+    
+    for attempt in range(max_attempts):
+        # Always show progress, not just in debug mode
+        progress_text.write(f"Section {section_num}: Attempt {attempt + 1}/{max_attempts}")
+        
+        if debug_mode:
+            st.write(f"Target words: {words_per_section}, Acceptable range: {min_acceptable_words}-{max_acceptable_words}")
+        
+        section_data = generate_section(
+            prompt_msg=prompt_msg,
+            section_num=section_num,
+            total_sections=total_sections,
+            previous_sections=previous_sections,
+            words_so_far=words_so_far,
+            target_words=internal_target,
+            debug_mode=debug_mode
+        )
+        
+        # Store the last valid response
+        if section_data and isinstance(section_data, dict) and "section_content" in section_data:
+            last_response = section_data
+            current_words = section_data["word_count"]
+            
+            if debug_mode:
+                st.write(f"Generated {current_words} words")
+            
+            # If we have enough words within the acceptable range, return this response
+            if min_acceptable_words <= current_words <= max_acceptable_words:
+                if debug_mode:
+                    st.success(f"Section {section_num} generated successfully with {current_words} words on attempt {attempt + 1}")
+                return section_data
+            elif debug_mode:
+                if current_words < min_acceptable_words:
+                    st.warning(f"Word count too low: {current_words} < {min_acceptable_words}, retrying...")
+                else:
+                    st.warning(f"Word count too high: {current_words} > {max_acceptable_words}, retrying...")
+            
+            # Overwrite prompt with word count instruction
+            base_prompt = prompt_msg
+            if current_words < min_acceptable_words:
+                additional_words_needed = min_acceptable_words - current_words
+                prompt_msg = f"{base_prompt}\n\nIMPORTANT: Your section must be between {min_acceptable_words} and {max_acceptable_words} words. Your previous response was {current_words} words. Add approximately {additional_words_needed} more words."
+            else:
+                words_to_reduce = current_words - max_acceptable_words
+                prompt_msg = f"{base_prompt}\n\nIMPORTANT: Your section must be between {min_acceptable_words} and {max_acceptable_words} words. Your previous response was {current_words} words. Reduce the content by approximately {words_to_reduce} words."
+    
+    # If we get here, all attempts failed to meet word count
+    if debug_mode:
+        st.error(f"All {max_attempts} attempts failed to meet word count requirements for section {section_num}")
+        if last_response:
+            st.write(f"Using best attempt with {last_response.get('word_count', 0)} words")
+    
+    return last_response or {
+        "section_content": f"## Section {section_num}\nFailed to generate content after {max_attempts} attempts.",
+        "section_title": f"Section {section_num}",
+        "word_count": 0
+    }
 
 
 if st.session_state["project_id"]:
     with st.expander("4) Generate & Refine Article (Claude)"):
+
+        # Additional user inputs for how to structure the article
+        desired_article_length = st.number_input(
+            "Desired total word count for the article",
+            min_value=200,
+            max_value=20000,
+            value=1000,
+            step=100
+        )
+        number_of_sections = st.number_input(
+            "Number of sections",
+            min_value=1,
+            max_value=20,
+            value=5,
+            step=1
+        )
 
         # If there's NO article selected, let user give a custom new article name
         new_article_name = ""
@@ -1030,53 +1263,130 @@ if st.session_state["project_id"]:
             brief_text = st.session_state.get("article_brief", "")
             db_kws = db.get_project_keywords(st.session_state["project_id"])
             keywords = [k["keyword"] for k in db_kws] if db_kws else []
-            kw_str = ", ".join(keywords)
+            kw_str = ", ".join(keywords) if keywords else "(none)"
 
+            # Get project details
             pinfo = db.get_project(st.session_state["project_id"])
             project_notes = {}
-            if pinfo and pinfo["notes"]:
+            if pinfo:
+                pinfo_dict = dict(pinfo)
                 try:
-                    project_notes = json.loads(pinfo["notes"])
+                    project_notes = json.loads(pinfo_dict.get("notes", "{}"))
                 except:
                     project_notes = {}
-            topic_in_notes = project_notes.get("topic", "").strip()
 
-            prompt_msg = f"""
-IMPORTANT: You must return a valid JSON object with exactly this structure:
-{{
-  "article": "Your article text here",
-  "meta_title": "Your SEO title here",
-  "meta_description": "Your meta description here"
-}}
+                journey_stage = pinfo_dict.get("journey_stage", "")
+                category = pinfo_dict.get("category", "")
+                care_areas_list = json.loads(pinfo_dict.get("care_areas", "[]"))
+                format_type = pinfo_dict.get("format_type", "")
+                business_cat = pinfo_dict.get("business_category", "")
+                consumer_need = project_notes.get("consumer_need", "")
+                tone_of_voice = project_notes.get("tone_of_voice", "")
+                target_audience = project_notes.get("target_audience", "")
+                freeform_notes = project_notes.get("freeform_notes", "")
+                topic_in_notes = project_notes.get("topic", "").strip()
 
-The article MUST:
-1. Be super super extremely long, many thousands of words
-2. Include ALL of these keywords: {kw_str}
+            # Build the base context prompt
+            context_msg = f"""
+MAIN TOPIC: {topic_in_notes}
 
-Write an article on:
-Topic: {topic_in_notes}
-Brief: {brief_text}
+PROJECT BRIEF:
+{brief_text}
 
-Format the article with:
-1. Clear section headings
-2. Double line breaks between paragraphs
-3. Proper bullet points where appropriate
-4. Well-structured sections
-5. Clear introduction and conclusion
+REQUIRED KEYWORDS (must be used):
+{kw_str}
 
-The meta title should be 50-60 characters.
-The meta description should be 150-160 characters.
+PROJECT SPECIFICATIONS:
+1. Journey Stage: {journey_stage}
+2. Category: {category}
+3. Care Areas: {', '.join(care_areas_list)}
+4. Format Type: {format_type}
+5. Business Category: {business_cat}
+6. Consumer Need: {consumer_need}
+7. Tone of Voice: {tone_of_voice}
+8. Target Audience: {target_audience}
 
-REMEMBER: Return ONLY the JSON object. No other text or explanations.
+ADDITIONAL CONTEXT:
+{freeform_notes}
+
+CONTENT REQUIREMENTS:
+- Total Word Count Target: {desired_article_length * 2}  # Doubled for internal target
+- Number of Sections: {number_of_sections}
+- Must stay focused on the main topic
 """
 
-            # ---- Call our simplified function ----
-            article_text, meta_title, meta_desc = generate_article_with_validation(
-                prompt_msg=prompt_msg, 
-                keywords=keywords, 
-                max_attempts=5, 
-                debug_mode=debug_mode
-            )
+            full_article = ""
+            total_words = 0
+            section_titles = []
+
+            for section_num in range(1, number_of_sections + 1):
+                with st.spinner(f"Generating section {section_num} of {number_of_sections}..."):
+                    section_data = generate_section_with_retries(
+                        prompt_msg=context_msg,
+                        section_num=section_num,
+                        total_sections=number_of_sections,
+                        previous_sections=full_article,
+                        words_so_far=total_words,
+                        target_words=desired_article_length,
+                        debug_mode=debug_mode,
+                        max_attempts=50
+                    )
+
+                    if section_data:
+                        if isinstance(section_data, dict) and "section_content" in section_data:
+                            full_article += "\n\n" + section_data["section_content"]
+                            total_words += section_data.get("word_count", 0)
+                            section_titles.append(section_data.get("section_title", f"Section {section_num}"))
+                            
+                            # Show progress
+                            st.write(f"✓ Section {section_num}: {section_data.get('section_title')} ({section_data.get('word_count', 0)} words)")
+                        else:
+                            st.warning(f"Section {section_num} generated with incomplete data")
+                            # Try to continue anyway with what we got
+                            full_article += f"\n\n## Section {section_num}\n{str(section_data)}"
+                    else:
+                        st.error(f"Failed to generate section {section_num}")
+                        break
+
+            # Once sections are done, attempt meta generation (optional) only if we have some content
+            meta_title = ""
+            meta_desc = ""
+            if full_article.strip():
+                meta_prompt = f"""
+Article sections:
+{' -> '.join(section_titles)}
+
+Total words so far: {total_words}.
+
+Return ONLY a JSON object with exactly this structure and nothing else:
+{{
+    "meta_title": "A short SEO-friendly title (50-60 characters)",
+    "meta_description": "A meta description around 150-160 characters"
+}}
+"""
+                if debug_mode:
+                    st.write("### Debug: Meta Information Prompt")
+                    st.code(meta_prompt, language="text")
+
+                meta_response = query_claude_api(meta_prompt)
+
+                if debug_mode:
+                    st.write("### Debug: Meta Information Response")
+                    st.code(meta_response, language="text")
+
+                try:
+                    start_idx = meta_response.find('{')
+                    end_idx = meta_response.rfind('}')
+                    if start_idx == -1 or end_idx == -1:
+                        meta_data = {}
+                    else:
+                        json_str = meta_response[start_idx:end_idx + 1]
+                        meta_data = json.loads(json_str)
+                    meta_title = meta_data.get("meta_title", "")
+                    meta_desc = meta_data.get("meta_description", "")
+                except:
+                    meta_title = ""
+                    meta_desc = ""
 
             # Create new article if needed
             if not st.session_state["article_id"]:
@@ -1084,17 +1394,22 @@ REMEMBER: Return ONLY the JSON object. No other text or explanations.
                 new_art_id = db.save_article_content(
                     project_id=st.session_state["project_id"],
                     article_title=final_title,
-                    article_content=""
+                    article_content=full_article,
+                    article_schema=None,
+                    meta_title=meta_title,
+                    meta_description=meta_desc,
                 )
                 st.session_state["article_id"] = new_art_id
 
-            # Store in session state
             current_aid = st.session_state["article_id"]
-            set_current_draft(current_aid, article_text or "")
+            set_current_draft(current_aid, full_article or "")
             set_meta_title(current_aid, meta_title or "")
             set_meta_desc(current_aid, meta_desc or "")
 
-            st.success("Article (possibly partial), meta title, and meta description have been set in the UI!")
+            if full_article.strip():
+                st.success("Article (with numeric markers) + meta fields have been set in the UI!")
+            else:
+                st.warning("No complete article content generated. Check errors above.")
 
         # Now show refine UI only if we have an article_id
         article_id = st.session_state["article_id"]
@@ -1103,10 +1418,10 @@ REMEMBER: Return ONLY the JSON object. No other text or explanations.
         else:
             # Display the current article draft
             current_draft_text = get_current_draft(article_id)
-            st.write("### Current Article Draft")
+            st.write("### Current Article Draft (with numeric markers)")
             new_draft = st.text_area(
                 "Current Article Draft",
-                value=current_draft_text,
+                value=clean_article_text(current_draft_text, debug_mode=debug_mode),
                 height=300
             )
             if new_draft != current_draft_text:
@@ -1128,9 +1443,10 @@ Current article:
 
 {get_current_draft(article_id)}
 
-IMPORTANT: Return only the final text (article).
-Do not include disclaimers or commentary.
-Please refine the article according to these instructions:
+IMPORTANT: Return only the final text (article) with your modifications applied.
+Retain the numeric word markers after each word or (keyword) for keywords.
+
+Refine the article according to these instructions:
 {refine_instructions_text}
 """
                     with st.spinner("Refining..."):
@@ -1149,7 +1465,6 @@ if st.session_state["project_id"]:
             st.info("No article selected. Generate or select one first.")
         else:
             draft_text = get_current_draft(article_id)
-
             article_db_row = db.get_article_content(article_id)
             existing_title = ""
             existing_meta_title = ""
@@ -1160,10 +1475,8 @@ if st.session_state["project_id"]:
                 existing_meta_desc = article_db_row["meta_description"] or ""
 
             st.write("### Article Title")
-            # This is the 'visible' title (not the meta_title)
             updated_article_title = st.text_input("Give your article a clear title", value=existing_title)
 
-            # default meta from the session
             default_meta_title = get_meta_title(article_id) or existing_meta_title
             default_meta_desc = get_meta_desc(article_id) or existing_meta_desc
 
@@ -1179,7 +1492,7 @@ if st.session_state["project_id"]:
                     article_schema=None,
                     meta_title=meta_title,
                     meta_description=meta_desc,
-                    article_id=article_id  # if updating existing
+                    article_id=article_id
                 )
 
                 # Update session data
@@ -1202,7 +1515,7 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
             st.write(article_row["article_title"])
 
             st.write("### Article Content")
-            st.write(article_row["article_content"])
+            st.write(clean_article_text(article_row["article_content"], debug_mode=debug_mode))
 
             if article_row["meta_title"] or article_row["meta_description"]:
                 st.write("---")
@@ -1215,6 +1528,7 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
                 st.session_state["article_id"] = None
                 st.rerun()
 
+
 # Debug info
 if debug_mode:
     st.write("## Debug Info")
@@ -1225,91 +1539,5 @@ if debug_mode:
     st.json({"refine_instructions_by_article": st.session_state["refine_instructions_by_article"]})
     st.json({"meta_title_by_article": st.session_state["meta_title_by_article"]})
     st.json({"meta_desc_by_article": st.session_state["meta_desc_by_article"]})
-    st.write("All Projects:", [dict(p) for p in projects])
-
-
-# --------------------------------------------------------------------
-# 7) Community Feature (NEW)
-# --------------------------------------------------------------------
-
-def connect_to_community_db(db_path="community_details.db"):
-    """
-    Attempt to connect to the community_details.db database.
-    If connection fails, show an error message.
-    """
-    try:
-        conn = sqlite3.connect(db_path, check_same_thread=False)
-        return conn
-    except Exception as e:
-        st.error(f"Cannot connect to community database: {e}")
-        return None
-
-def get_communities(conn):
-    """
-    Retrieve a list of (id, name) from the 'communities' table.
-    This table and DB won't exist yet, so it will fail initially.
-    """
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT id, name FROM communities")
-        return cur.fetchall()
-    except Exception as e:
-        st.warning(f"Could not fetch community list: {e}")
-        return []
-
-def get_community_details(conn, community_id):
-    """
-    Retrieve 'details' for the selected community from the 'communities' table.
-    Assumes a column named 'details' in that table.
-    """
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT details FROM communities WHERE id = ?", (community_id,))
-        row = cur.fetchone()
-        return row[0] if row else "No details available."
-    except Exception as e:
-        return f"Error retrieving details: {e}"
-
-with st.expander("7) Select a Community to Feature"):
-    community_conn = connect_to_community_db()
-    if community_conn:
-        communities_data = get_communities(community_conn)
-        if communities_data:
-            # Create a selectbox for all community names
-            community_dict = {name: cid for cid, name in communities_data}
-            selected_comm_name = st.selectbox("Available Communities", list(community_dict.keys()))
-
-            if selected_comm_name:
-                selected_comm_id = community_dict[selected_comm_name]
-                details = get_community_details(community_conn, selected_comm_id)
-                st.write(f"**Details for '{selected_comm_name}':**")
-                st.write(details)
-        else:
-            st.info("No communities found (or the table doesn't exist yet).")
-
-        community_conn.close()
-    else:
-        st.warning("Community DB connection failed (this is expected until 'community_details.db' is created).")
-
-
-def validate_article_requirements(text: str, required_keywords: list, min_words: int = 1000) -> tuple[bool, str]:
-    """
-    Validates if the article meets all requirements.
-    Returns (is_valid, failure_reason)
-    """
-    # Check word count
-    word_count = len(text.split())
-    if word_count < min_words:
-        return False, f"Word count too low: {word_count}/{min_words}"
-    
-    # Check keywords
-    text_lower = text.lower()
-    missing_keywords = []
-    for kw in required_keywords:
-        if kw.lower().strip() not in text_lower:
-            missing_keywords.append(kw)
-    
-    if missing_keywords:
-        return False, f"Missing keywords: {', '.join(missing_keywords)}"
-        
-    return True, "All requirements met"
+    all_projects_debug = [dict(p) for p in projects]
+    st.write("All Projects:", all_projects_debug)
