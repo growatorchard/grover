@@ -450,7 +450,7 @@ def format_keyword_report(keyword_data):
 
 
 # --------------------------------------------------------------------
-# 3) Anthropic's Claude Query
+# 3) LLM Query Functions
 # --------------------------------------------------------------------
 def query_claude_api(message: str, conversation_history: list = None) -> str:
     """
@@ -568,6 +568,71 @@ def query_groq_api(message: str, conversation_history: list = None) -> str:
             error_message += f"\nResponse: {e.response.text}"
         return error_message
 
+def query_chatgpt_api(message: str, conversation_history: list = None) -> str:
+    """
+    Calls OpenAI's Chat Completion API (ChatGPT) with conversation history support.
+    Requires st.secrets['OPENAI_API_KEY'] to be set.
+    """
+    url = "https://api.openai.com/v1/chat/completions"
+    try:
+        api_key = st.secrets["OPENAI_API_KEY"]
+    except:
+        return "Error: No OPENAI_API_KEY found in st.secrets."
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {api_key}'
+    }
+
+    messages = []
+    if conversation_history:
+        messages.extend(conversation_history)
+    messages.append({
+        'role': 'user',
+        'content': message
+    })
+
+    payload = {
+        # "model": "o1-2024-12-17",
+        "model": "gpt-4o",
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 20000
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response.raise_for_status()
+        response_data = response.json()
+        if "choices" in response_data and len(response_data["choices"]) > 0:
+            content = response_data["choices"][0]["message"]["content"]
+            if conversation_history is not None:
+                conversation_history.append({
+                    'role': 'assistant',
+                    'content': content
+                })
+            return content
+        return "Could not extract content from ChatGPT response."
+    except requests.exceptions.RequestException as e:
+        error_message = f"API request failed: {str(e)}"
+        if hasattr(e, 'response') and e.response is not None:
+            error_message += f"\nResponse: {e.response.text}"
+        return error_message
+
+def query_llm_api(message: str, conversation_history: list = None) -> str:
+    """
+    Dispatches the API call to the selected LLM based on the sidebar model selection.
+    """
+    model = st.session_state.get('selected_model', 'Claude')
+    if model == "Claude":
+        return query_claude_api(message, conversation_history)
+    elif model == "Groq (Llama-70B)":
+        return query_groq_api(message, conversation_history)
+    elif model == "ChatGPT (o1)":
+        return query_chatgpt_api(message, conversation_history)
+    else:
+        return "Selected model not supported."
+
 
 # --------------------------------------------------------------------
 # 4) Optional Website Scraping
@@ -607,10 +672,11 @@ st.title("Grover: LLM Based, with SEMrush Keyword Research")
 
 debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
 
-# Add model selector
+# Add model selector including ChatGPT (o1)
 model_options = {
     "Claude": "claude-3-5-sonnet-20241022",
-    "Groq (Llama-70B)": "llama-70b-v2"
+    "Groq (Llama-70B)": "llama-70b-v2",
+    "ChatGPT (o1)": "gpt-3.5-turbo"
 }
 st.session_state['selected_model'] = st.sidebar.selectbox("Select Model", list(model_options.keys()))
 
@@ -627,7 +693,6 @@ care_area_options = ["Independent Living", "Assisted Living", "Memory Care", "Sk
 tone_of_voice_options = ["Professional", "Friendly", "Conversational", "Empathetic", "Other"]
 target_audience_options = ["Seniors", "Adult Children", "Caregivers", "Health Professionals", "Other"]
 consumer_need_options = ["Educational", "Financial Guidance", "Medical Info", "Lifestyle/Wellness", "Other"]
-
 
 def dynamic_selectbox(label, options, default_val):
     """
@@ -716,7 +781,7 @@ if st.session_state["project_id"]:
     if st.sidebar.button("Delete Project"):
         db.delete_project(st.session_state["project_id"])
         st.session_state["project_id"] = None
-        st.rerun()
+        st.experimental_rerun()
 
 # -- Sidebar: Article Selection (only if a project is chosen) --
 if "article_id" not in st.session_state:
@@ -739,7 +804,7 @@ if st.session_state["project_id"]:
             db.delete_article_content(st.session_state["article_id"])
             st.success("Article content deleted.")
             st.session_state["article_id"] = None
-            st.rerun()
+            st.experimental_rerun()
 
 
 # 1) Create / Update Project
@@ -798,8 +863,7 @@ Given the following details:
 Suggest 5 potential article topics.
 """
                 with st.spinner("Generating topic suggestions..."):
-                    suggestions_raw = query_claude_api(prompt_for_topics)
-
+                    suggestions_raw = query_llm_api(prompt_for_topics)
                 st.session_state["topic_suggestions"] = suggestions_raw.split("\n")
                 st.success("See suggested topics below.")
 
@@ -867,7 +931,7 @@ We have these details for a new article:
 Suggest 5 potential article topics.
 """
             with st.spinner("Generating topic suggestions..."):
-                suggestions_raw = query_claude_api(prompt_for_topics)
+                suggestions_raw = query_llm_api(prompt_for_topics)
             st.session_state["topic_suggestions"] = suggestions_raw.split("\n")
             st.success("See suggested topics below.")
 
@@ -899,7 +963,7 @@ Suggest 5 potential article topics.
                 new_id = db.create_project(p_data)
                 st.session_state["project_id"] = new_id
                 st.success(f"Created project '{new_name}' (ID={new_id}).")
-                st.rerun()
+                st.experimental_rerun()
             else:
                 st.error("Please enter a project name.")
 
@@ -918,7 +982,7 @@ if st.session_state["project_id"]:
                 )
                 if col2.button("X", key=f"kwdel_{kw['id']}"):
                     db.delete_keyword(kw["id"])
-                    st.rerun()
+                    st.experimental_rerun()
         else:
             st.info("No keywords yet.")
 
@@ -935,7 +999,7 @@ if st.session_state["project_id"]:
                     if line:
                         db.add_keyword(st.session_state["project_id"], line, None, None, None)
             st.success("Keywords saved!")
-            st.rerun()
+            st.experimental_rerun()
 
         st.write("---")
         st.write("### Research with SEMrush")
@@ -974,7 +1038,7 @@ if st.session_state["project_id"]:
                             None,  # search_intent
                             main_kw['Kd']
                         )
-                        st.rerun()
+                        st.experimental_rerun()
                 if related_kws:
                     st.write("**Related Keywords**:")
                     for rk in related_kws:
@@ -988,7 +1052,7 @@ if st.session_state["project_id"]:
                                 None,  # search_intent
                                 rk['Kd']
                             )
-                            st.rerun()
+                            st.experimental_rerun()
 
 
 # 3) Article Brief
@@ -1006,7 +1070,7 @@ if st.session_state["project_id"]:
 
 
 # --------------------------------------------------------------------
-# 4) Generate & Refine (Claude)
+# 4) Generate & Refine (LLM)
 # --------------------------------------------------------------------
 def clean_article_text(content, debug_mode=False):
     """Remove word count markers and keyword markers from article text (if desired)."""
@@ -1015,12 +1079,8 @@ def clean_article_text(content, debug_mode=False):
     if debug_mode:
         # If debug mode, keep markers so we can see them
         return content
-    # Remove the numeric markers like (1), (2), etc. but keep any real parentheses from text?
-    # This might be a simple approach:
+    # Remove the numeric markers like (1), (2), etc.
     cleaned = re.sub(r"\(\d+\)", "", content)
-    # Keep (keyword) references or remove them?
-    # If you want to remove (keyword) as well, uncomment:
-    # cleaned = re.sub(r"\(keyword\)", "", cleaned)
     return cleaned
 
 def generate_article_with_validation(prompt_msg, keywords, max_attempts=5, debug_mode=False):
@@ -1033,8 +1093,8 @@ def generate_article_with_validation(prompt_msg, keywords, max_attempts=5, debug
     final_attempt_parsed = {}
 
     for attempt in range(1, max_attempts + 1):
-        with st.spinner(f"Generating article & meta from Claude (Attempt {attempt}/{max_attempts})..."):
-            output = query_claude_api(prompt_msg)
+        with st.spinner(f"Generating article & meta from LLM (Attempt {attempt}/{max_attempts})..."):
+            output = query_llm_api(prompt_msg)
             final_attempt_output = output  # Store for final usage
 
             # Try parsing the output as JSON
@@ -1135,7 +1195,7 @@ Return ONLY a JSON object with this structure:
         st.write(f"### Debug: Full Prompt for Section {section_num}")
         st.code(section_prompt, language="text")
     
-    response = query_claude_api(section_prompt, conversation)
+    response = query_llm_api(section_prompt, conversation)
     
     if debug_mode:
         st.write(f"### Debug: LLM Response for Section {section_num}")
@@ -1171,14 +1231,13 @@ def generate_section_with_retries(prompt_msg, section_num, total_sections, previ
     words_per_section = internal_target // total_sections
     
     # Allow 50% less or more than the doubled target
-    min_acceptable_words = int(words_per_section * 0.2)  # 50% of target
+    min_acceptable_words = int(words_per_section * 0.5)  # 50% of target
     max_acceptable_words = int(words_per_section * 2.0)  # 150% of target
     
     # Create a progress placeholder
     progress_text = st.empty()
     
     for attempt in range(max_attempts):
-        # Always show progress, not just in debug mode
         progress_text.write(f"Section {section_num}: Attempt {attempt + 1}/{max_attempts}")
         
         if debug_mode:
@@ -1222,7 +1281,6 @@ def generate_section_with_retries(prompt_msg, section_num, total_sections, previ
                 words_to_reduce = current_words - max_acceptable_words
                 prompt_msg = f"{base_prompt}\n\nIMPORTANT: Your section must be between {min_acceptable_words} and {max_acceptable_words} words. Your previous response was {current_words} words. Reduce the content by approximately {words_to_reduce} words."
     
-    # If we get here, all attempts failed to meet word count
     if debug_mode:
         st.error(f"All {max_attempts} attempts failed to meet word count requirements for section {section_num}")
         if last_response:
@@ -1236,7 +1294,7 @@ def generate_section_with_retries(prompt_msg, section_num, total_sections, previ
 
 
 if st.session_state["project_id"]:
-    with st.expander("4) Generate & Refine Article (Claude)"):
+    with st.expander("4) Generate & Refine Article (LLM)"):
 
         # Additional user inputs for how to structure the article
         desired_article_length = st.number_input(
@@ -1338,17 +1396,14 @@ CONTENT REQUIREMENTS:
                             total_words += section_data.get("word_count", 0)
                             section_titles.append(section_data.get("section_title", f"Section {section_num}"))
                             
-                            # Show progress
                             st.write(f"✓ Section {section_num}: {section_data.get('section_title')} ({section_data.get('word_count', 0)} words)")
                         else:
                             st.warning(f"Section {section_num} generated with incomplete data")
-                            # Try to continue anyway with what we got
                             full_article += f"\n\n## Section {section_num}\n{str(section_data)}"
                     else:
                         st.error(f"Failed to generate section {section_num}")
                         break
 
-            # Once sections are done, attempt meta generation (optional) only if we have some content
             meta_title = ""
             meta_desc = ""
             if full_article.strip():
@@ -1368,7 +1423,7 @@ Return ONLY a JSON object with exactly this structure and nothing else:
                     st.write("### Debug: Meta Information Prompt")
                     st.code(meta_prompt, language="text")
 
-                meta_response = query_claude_api(meta_prompt)
+                meta_response = query_llm_api(meta_prompt)
 
                 if debug_mode:
                     st.write("### Debug: Meta Information Response")
@@ -1388,7 +1443,6 @@ Return ONLY a JSON object with exactly this structure and nothing else:
                     meta_title = ""
                     meta_desc = ""
 
-            # Create new article if needed
             if not st.session_state["article_id"]:
                 final_title = new_article_name.strip() if new_article_name.strip() else "(Generated Draft)"
                 new_art_id = db.save_article_content(
@@ -1411,12 +1465,10 @@ Return ONLY a JSON object with exactly this structure and nothing else:
             else:
                 st.warning("No complete article content generated. Check errors above.")
 
-        # Now show refine UI only if we have an article_id
         article_id = st.session_state["article_id"]
         if not article_id:
             st.info("No article selected/created yet. Generate an article first or create one above.")
         else:
-            # Display the current article draft
             current_draft_text = get_current_draft(article_id)
             st.write("### Current Article Draft (with numeric markers)")
             new_draft = st.text_area(
@@ -1427,7 +1479,6 @@ Return ONLY a JSON object with exactly this structure and nothing else:
             if new_draft != current_draft_text:
                 set_current_draft(article_id, new_draft)
 
-            # Article-specific refine instructions
             current_refine_instructions = get_refine_instructions(article_id)
             st.write("---")
             st.write("**Optionally** refine the article with additional instructions below.")
@@ -1450,7 +1501,7 @@ Refine the article according to these instructions:
 {refine_instructions_text}
 """
                     with st.spinner("Refining..."):
-                        refined = query_claude_api(refine_prompt)
+                        refined = query_llm_api(refine_prompt)
                     set_current_draft(article_id, refined)
                     st.success("Refined successfully!")
                 else:
@@ -1495,7 +1546,6 @@ if st.session_state["project_id"]:
                     article_id=article_id
                 )
 
-                # Update session data
                 set_current_draft(saved_id, final_text)
                 set_meta_title(saved_id, meta_title)
                 set_meta_desc(saved_id, meta_desc)
@@ -1526,7 +1576,7 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
                 db.delete_article_content(article_row["id"])
                 st.success("Article content deleted.")
                 st.session_state["article_id"] = None
-                st.rerun()
+                st.experimental_rerun()
 
 
 # Debug info
