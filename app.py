@@ -13,6 +13,29 @@ load_dotenv()  # This loads environment variables from .env
 
 TARGET_AUDIENCES = ["Seniors", "Adult Children", "Caregivers", "Health Professionals", "Other"]
 
+def calculate_token_costs(token_usage):
+    # Cost per million tokens (in USD)
+    INPUT_COST_PER_MILLION = 1.10
+    OUTPUT_COST_PER_MILLION = 4.40
+    
+    # Extract token counts
+    prompt_tokens = token_usage.get('prompt_tokens', 0)
+    completion_tokens = token_usage.get('completion_tokens', 0)
+    
+    # Calculate costs
+    input_cost = (prompt_tokens / 1_000_000) * INPUT_COST_PER_MILLION
+    output_cost = (completion_tokens / 1_000_000) * OUTPUT_COST_PER_MILLION
+    total_cost = input_cost + output_cost
+    
+    return {
+        'input_cost': input_cost,
+        'output_cost': output_cost,
+        'total_cost': total_cost,
+        'prompt_tokens': prompt_tokens,
+        'completion_tokens': completion_tokens,
+        'total_tokens': prompt_tokens + completion_tokens
+    }
+
 # --------------------------------------------------------------------
 # 1) Database Manager (SQLite) for Grover Projects
 # --------------------------------------------------------------------
@@ -308,6 +331,19 @@ class CommunityManager:
 
     def get_care_areas(self, community_id):
         self.cursor.execute("SELECT * FROM care_areas WHERE community_id = ?", (community_id,))
+        return self.cursor.fetchall()
+    
+    # New methods added to retrieve additional community-related info
+    def get_aliases(self, community_id):
+        self.cursor.execute("SELECT * FROM community_aliases WHERE community_id = ?", (community_id,))
+        return self.cursor.fetchall()
+        
+    def get_floor_plans(self, care_area_id):
+        self.cursor.execute("SELECT * FROM floor_plans WHERE care_area_id = ?", (care_area_id,))
+        return self.cursor.fetchall()
+        
+    def get_saas(self, care_area_id):
+        self.cursor.execute("SELECT * FROM services_activities_amenities WHERE care_area_id = ?", (care_area_id,))
         return self.cursor.fetchall()
 
 # --------------------------------------------------------------------
@@ -672,6 +708,8 @@ if "selected_topic" not in st.session_state:
     st.session_state["selected_topic"] = ""
 if "article_brief" not in st.session_state:
     st.session_state["article_brief"] = ""
+if "token_usage_history" not in st.session_state:
+    st.session_state["token_usage_history"] = []
 
 # --------------------------------------------------------------------
 # Sidebar: LLM Model Selector
@@ -777,7 +815,14 @@ Suggest 5 potential article topics.
 """
                 with st.spinner("Generating topic suggestions..."):
                     suggestions_raw, token_usage = query_llm_api(prompt_for_topics)
-                st.write(f"Token usage: {token_usage}")
+                # Display token usage and costs for this iteration
+                costs = calculate_token_costs(token_usage)
+                st.write(f"""
+**Token Usage & Costs:**
+- Input: {costs['prompt_tokens']:,} tokens (${costs['input_cost']:.4f})
+- Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
+- Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
+""")
                 st.session_state["topic_suggestions"] = suggestions_raw.split("\n")
                 st.success("See suggested topics below.")
             if st.session_state["topic_suggestions"]:
@@ -837,7 +882,14 @@ Suggest 5 potential article topics.
 """
             with st.spinner("Generating topic suggestions..."):
                 suggestions_raw, token_usage = query_llm_api(prompt_for_topics)
-            st.write(f"Token usage: {token_usage}")
+            # Display token usage and costs for this iteration
+            costs = calculate_token_costs(token_usage)
+            st.write(f"""
+**Token Usage & Costs:**
+- Input: {costs['prompt_tokens']:,} tokens (${costs['input_cost']:.4f})
+- Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
+- Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
+""")
             st.session_state["topic_suggestions"] = suggestions_raw.split("\n")
             st.success("See suggested topics below.")
         if st.session_state["topic_suggestions"]:
@@ -1040,23 +1092,25 @@ ADDITIONAL CONTEXT:
 {community_details_text}
 """
             full_article_prompt = f"""
-You are writing a highly focused article based on the following requirements:
+Generate a comprehensive article that MUST be AT LEAST {desired_article_length} words (this is a strict minimum).
 
-{context_msg}
+STRUCTURE:
+- Create exactly {number_of_sections} sections
+- Each section must start with "## " followed by a descriptive title
+- Maintain consistent depth and detail across all sections
 
-CONTENT REQUIREMENTS:
-- The article must be strictly AT LEAST: {desired_article_length} words.
-- Number of Sections: {number_of_sections}.
-- Each section should start with "## " followed by an appropriate section title.
+CONTEXT:
+Topic: {topic_in_notes}
+Keywords to Include: {kw_str}
+Target Audience: {', '.join(target_audience)}
+Tone: {tone_of_voice}
 
-Ensure that the article flows naturally, stays focused on the main topic, and adheres to the project specifications.
-
-Return ONLY a JSON object with exactly this structure and nothing else:
+Return ONLY a JSON object with this structure:
 {{
-    "article_content": "The complete article content with section markers and numerical markers",
-    "section_titles": ["Section Title 1", "Section Title 2", ..., "Section Title {number_of_sections}"],
-    "meta_title": "A short SEO-friendly title (50-60 characters)",
-    "meta_description": "A meta description around 150-160 characters"
+    "article_content": "The complete article with section markers",
+    "section_titles": ["Title 1", "Title 2", ...],
+    "meta_title": "SEO title (50-60 chars)",
+    "meta_description": "SEO description (150-160 chars)"
 }}
 """
             # Loop up to 5 iterations to ensure the word count is met
@@ -1066,6 +1120,20 @@ Return ONLY a JSON object with exactly this structure and nothing else:
             while iteration <= max_iterations:
                 with st.spinner(f"Generating full article (Iteration {iteration}/{max_iterations})..."):
                     response, token_usage = query_llm_api(full_article_prompt)
+                    # Store token usage in history
+                    st.session_state["token_usage_history"].append({
+                        "iteration": iteration,
+                        "timestamp": datetime.now().strftime("%H:%M:%S"),
+                        "usage": token_usage
+                    })
+                    # Display token usage and costs for this iteration
+                    costs = calculate_token_costs(token_usage)
+                    st.write(f"""
+**Token Usage & Costs:**
+- Input: {costs['prompt_tokens']:,} tokens (${costs['input_cost']:.4f})
+- Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
+- Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
+""")
                 try:
                     start_idx = response.find('{')
                     end_idx = response.rfind('}')
@@ -1078,6 +1146,13 @@ Return ONLY a JSON object with exactly this structure and nothing else:
                     meta_desc = full_response.get("meta_description", "")
                     section_titles = full_response.get("section_titles", [])
                     word_count = len(full_article.split())
+                    
+                    # Check for zero words case
+                    if word_count == 0:
+                        st.warning("Generated article has zero words. Restarting generation process...")
+                        iteration = 1  # Reset iteration counter
+                        continue  # Restart from beginning
+                        
                     if word_count >= desired_article_length:
                         final_response = full_response
                         break
@@ -1085,22 +1160,46 @@ Return ONLY a JSON object with exactly this structure and nothing else:
                         additional_needed = desired_article_length - word_count
                         st.info(f"Article only has {word_count} words. {additional_needed} more words needed. Retrying iteration {iteration + 1}...")
                         full_article_prompt = f"""
-Your previous article content is below:
+IMPORTANT: The previous article was {word_count} words, which is BELOW the required {desired_article_length} words.
+
+Add approximately {additional_needed} more words to reach the minimum requirement while maintaining quality and relevance.
+
+Previous content:
 {full_article}
 
-It currently has {word_count} words, which is less than the required {desired_article_length} words.
-Please expand the article by adding approximately {additional_needed} more words, while preserving the structure and quality.
-Return ONLY a JSON object with exactly the same structure as before:
-{{
-    "article_content": "The complete article content with section markers and numerical markers",
-    "section_titles": ["Section Title 1", "Section Title 2", ..., "Section Title {number_of_sections}"],
-    "meta_title": "A short SEO-friendly title (50-60 characters)",
-    "meta_description": "A meta description around 150-160 characters"
-}}
+Return the complete expanded article in the same JSON format as before.
 """
                         iteration += 1
                 except Exception as e:
                     st.error("Failed to parse article JSON: " + str(e))
+                    # Check if the response is empty or contains no words
+                    if not response.strip() or len(response.strip().split()) == 0:
+                        st.warning("Empty response received. Restarting generation process...")
+                        iteration = 1  # Reset iteration counter
+                        # Reset prompt to original
+                        full_article_prompt = f"""
+Generate a comprehensive article that MUST be AT LEAST {desired_article_length} words (this is a strict minimum).
+
+STRUCTURE:
+- Create exactly {number_of_sections} sections
+- Each section must start with "## " followed by a descriptive title
+- Maintain consistent depth and detail across all sections
+
+CONTEXT:
+Topic: {topic_in_notes}
+Keywords to Include: {kw_str}
+Target Audience: {', '.join(target_audience)}
+Tone: {tone_of_voice}
+
+Return ONLY a JSON object with this structure:
+{{
+    "article_content": "The complete article with section markers",
+    "section_titles": ["Title 1", "Title 2", ...],
+    "meta_title": "SEO title (50-60 chars)",
+    "meta_description": "SEO description (150-160 chars)"
+}}
+"""
+                        continue
                     final_response = {"article_content": response, "meta_title": "", "meta_description": "", "section_titles": []}
                     break
             if final_response is not None:
@@ -1149,7 +1248,7 @@ Return ONLY a JSON object with exactly the same structure as before:
             st.write("### Current Article Draft (with numeric markers)")
             new_draft = st.text_area(
                 "Current Article Draft",
-                value=full_article if full_article.strip() else current_draft_text,
+                value=current_draft_text,
                 height=300
             )
             if new_draft != current_draft_text:
@@ -1176,7 +1275,12 @@ Refine the article according to these instructions:
 """
                     with st.spinner("Refining..."):
                         refined, token_usage = query_llm_api(refine_prompt)
-                    st.write(f"Token usage: {token_usage}")
+                    st.write(f"""
+**Token Usage & Costs:**
+- Input: {token_usage['prompt_tokens']:,} tokens (${token_usage['input_cost']:.4f})
+- Output: {token_usage['completion_tokens']:,} tokens (${token_usage['output_cost']:.4f})
+- Total: {token_usage['total_tokens']:,} tokens (${token_usage['total_cost']:.4f})
+""")
                     st.session_state["drafts_by_article"][article_id] = refined
                     st.success("Refined successfully!")
                 else:
@@ -1239,7 +1343,7 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
             st.write("### Article Title")
             st.write(article_row["article_title"])
             st.write("### Article Content")
-            st.write(full_article if full_article.strip() else article_row["article_content"])
+            st.write(article_row["article_content"])
             if article_row["meta_title"] or article_row["meta_description"]:
                 st.write("---")
                 st.write("**Meta Title**:", article_row["meta_title"])
@@ -1253,6 +1357,49 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
 # --------------------------------------------------------------------
 # 7) Generate Community-Specific Revision
 # --------------------------------------------------------------------
+def get_care_area_details(comm_manager, community_id):
+    """Get detailed information about care areas and their related data"""
+    care_areas = comm_manager.get_care_areas(community_id)
+    detailed_care_areas = []
+    
+    for care_area in care_areas:
+        # Get floor plans for this care area
+        floor_plans = comm_manager.get_floor_plans(care_area["id"])
+        floor_plan_details = []
+        for fp in floor_plans:
+            floor_plan_details.append(
+                f"- {fp['name']}: {fp.get('bedrooms', 'N/A')} bed/{fp.get('bathrooms', 'N/A')} bath, {fp.get('square_footage', 'N/A')} sq ft"
+            )
+            
+        # Get SAAs (Services, Activities, Amenities)
+        saas = comm_manager.get_saas(care_area["id"])
+        saa_by_type = {}
+        for saa in saas:
+            saa_type = saa["type"]
+            if saa_type not in saa_by_type:
+                saa_by_type[saa_type] = []
+            saa_by_type[saa_type].append(saa["description"])
+            
+        # Build care area detail string using updated column names
+        care_area_info = f"""
+Care Area: {care_area['care_area']}
+Description: {care_area.get('general_floor_plan_description', 'N/A')}
+Starting Price: ${care_area.get('floor_plan_starting_at_price', 'N/A')} {care_area.get('floor_plan_billing_period', 'N/A')}
+Care Area URL: {care_area.get('care_area_url', 'N/A')}
+
+Available Floor Plans:
+{chr(10).join(floor_plan_details) if floor_plan_details else 'None'}
+"""
+        if saa_by_type:
+            care_area_info += "\nServices/Activities/Amenities:\n"
+            for saa_type, descriptions in saa_by_type.items():
+                care_area_info += f"{saa_type.title()}:\n"
+                care_area_info += "\n".join(f"- {desc}" for desc in descriptions) + "\n"
+            
+        detailed_care_areas.append(care_area_info)
+        
+    return "\n\n".join(detailed_care_areas)
+
 if st.session_state.get("project_id") and st.session_state.get("article_id"):
     with st.expander("7) Generate Community-Specific Revision"):
         article_row = db.get_article_content(st.session_state["article_id"])
@@ -1263,12 +1410,23 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
             # Get the list of communities from the Community Manager
             communities = comm_manager.get_communities()
             community_names = ["None"] + [f"{c['community_name']} (ID: {c['id']})" for c in communities]
-            selected_rev_comm = st.selectbox("Select Community for Revision", community_names, key="rev_comm")
+            
+            # Use a unique key for the selectbox to prevent state conflicts
+            selected_rev_comm = st.selectbox(
+                "Select Community for Revision", 
+                community_names, 
+                key=f"rev_comm_{st.session_state['article_id']}"
+            )
+            
             if selected_rev_comm != "None":
                 rev_comm_id = int(selected_rev_comm.split("ID:")[-1].replace(")", "").strip())
                 community = comm_manager.get_community(rev_comm_id)
-                care_areas = comm_manager.get_care_areas(rev_comm_id)
-                care_areas_names = [ca["care_area"] for ca in care_areas] if care_areas else []
+                # Retrieve aliases and detailed care area info
+                aliases = comm_manager.get_aliases(rev_comm_id)
+                alias_list = [alias["alias"] for alias in aliases] if aliases else []
+                aliases_text = ", ".join(alias_list) if alias_list else "None"
+                care_area_details_text = get_care_area_details(comm_manager, rev_comm_id)
+                
                 community_details_text = f"""
 COMMUNITY DETAILS:
 - Name: {community["community_name"]}
@@ -1280,11 +1438,19 @@ COMMUNITY DETAILS:
 - Dining Page: {community["dining_page"]}
 - Gallery Page: {community["gallery_page"]}
 - Health & Wellness Page: {community["health_wellness_page"]}
-- Care Areas: {', '.join(care_areas_names) if care_areas_names else 'None'}
+- Aliases: {aliases_text}
+
+Detailed Care Areas:
+{care_area_details_text}
 """
                 default_rev_instructions = f"Revise the article below to be specifically tailored for the community with the following details: {community_details_text}"
-                rev_instructions = st.text_area("Revision Instructions (optional)", value=default_rev_instructions, key="rev_instructions")
-                if st.button("Generate Community Revision"):
+                rev_instructions = st.text_area(
+                    "Revision Instructions (optional)", 
+                    value=default_rev_instructions, 
+                    key=f"rev_instructions_{st.session_state['article_id']}"
+                )
+                
+                if st.button("Generate Community Revision", key=f"gen_rev_{st.session_state['article_id']}"):
                     revision_prompt = f"""
 Here is the current article:
 {original_article}
@@ -1298,19 +1464,29 @@ Return only the revised article text.
 """
                     with st.spinner("Generating community-specific revision..."):
                         revised_article_text, token_usage = query_llm_api(revision_prompt)
-                    st.write(f"Token usage: {token_usage}")
-                    new_rev_title = f"{article_row['article_title']} - Community Revision for {community['community_name']}"
-                    new_article_id = db.save_article_content(
-                        project_id = st.session_state["project_id"],
-                        article_title = new_rev_title,
-                        article_content = revised_article_text,
-                        article_schema = None,
-                        meta_title = article_row.get("meta_title", ""),
-                        meta_description = article_row.get("meta_description", "")
-                    )
-                    st.success(f"Community revision saved as new article (ID: {new_article_id}).")
-                    # Optionally, update the session to select the new article revision
-                    st.session_state["article_id"] = new_article_id
+                        st.write(f"""
+**Token Usage & Costs:**
+- Input: {token_usage['prompt_tokens']:,} tokens (${token_usage['input_cost']:.4f})
+- Output: {token_usage['completion_tokens']:,} tokens (${token_usage['output_cost']:.4f})
+- Total: {token_usage['total_tokens']:,} tokens (${token_usage['total_cost']:.4f})
+""")
+                        
+                        new_rev_title = f"{article_row['article_title']} - Community Revision for {community['community_name']}"
+                        # Convert SQLite Row to dict to use get() method
+                        article_dict = dict(article_row)
+                        new_article_id = db.save_article_content(
+                            project_id=st.session_state["project_id"],
+                            article_title=new_rev_title,
+                            article_content=revised_article_text,
+                            article_schema=None,
+                            meta_title=article_dict.get("meta_title", ""),
+                            meta_description=article_dict.get("meta_description", "")
+                        )
+                        
+                        # Update session state with new article while maintaining project
+                        st.session_state["article_id"] = new_article_id
+                        st.success(f"Community revision saved as new article (ID: {new_article_id}).")
+                        st.rerun()
             else:
                 st.info("Please select a community for revision.")
 
@@ -1319,12 +1495,15 @@ Return only the revised article text.
 # --------------------------------------------------------------------
 if debug_mode:
     st.write("## Debug Info")
-    st.json({"project_id": st.session_state.get("project_id")})
-    st.json({"article_id": st.session_state.get("article_id")})
-    st.json({"article_brief": st.session_state.get("article_brief", "")})
-    st.json({"drafts_by_article": st.session_state.get("drafts_by_article", {})})
-    st.json({"refine_instructions_by_article": st.session_state.get("refine_instructions_by_article", {})})
-    st.json({"meta_title_by_article": st.session_state.get("meta_title_by_article", {})})
-    st.json({"meta_desc_by_article": st.session_state.get("meta_desc_by_article", {})})
+    st.json({
+        "project_id": st.session_state.get("project_id"),
+        "article_id": st.session_state.get("article_id"),
+        "article_brief": st.session_state.get("article_brief", ""),
+        "drafts_by_article": st.session_state.get("drafts_by_article", {}),
+        "refine_instructions_by_article": st.session_state.get("refine_instructions_by_article", {}),
+        "meta_title_by_article": st.session_state.get("meta_title_by_article", {}),
+        "meta_desc_by_article": st.session_state.get("meta_desc_by_article", {}),
+        "token_usage_history": st.session_state.get("token_usage_history", [])
+    })
     all_projects_debug = [dict(p) for p in projects]
     st.write("All Projects:", all_projects_debug)
