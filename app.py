@@ -36,6 +36,27 @@ def calculate_token_costs(token_usage):
         'total_tokens': prompt_tokens + completion_tokens
     }
 
+def clean_json_response(response: str) -> str:
+    """Clean and extract JSON from various response formats"""
+    # Remove any triple quotes and markdown formatting
+    response = response.replace('```json', '').replace('```', '')
+    
+    # Find the first { and last } for proper JSON extraction
+    start_idx = response.find('{')
+    end_idx = response.rfind('}')
+    
+    if start_idx == -1 or end_idx == -1:
+        raise ValueError("No JSON object found in response")
+        
+    # Extract the JSON part
+    json_str = response[start_idx:end_idx + 1]
+    
+    # Remove any leading/trailing whitespace
+    json_str = json_str.strip()
+    
+    return json_str
+
+
 # --------------------------------------------------------------------
 # 1) Database Manager (SQLite) for Grover Projects
 # --------------------------------------------------------------------
@@ -498,22 +519,23 @@ def format_keyword_report(keyword_data):
 # --------------------------------------------------------------------
 # 4) LLM Query Functions
 # --------------------------------------------------------------------
-def query_claude_api(message: str, conversation_history: list = None) -> str:
+def query_claude_api(message: str, conversation_history: list = None) -> tuple[str, dict, str]:
     """
     Calls Anthropic's /v1/messages endpoint with conversation history support.
-    Requires st.secrets['ANTHROPIC_API_KEY'] to be set.
+    Returns: (processed_response, token_usage, raw_response)
     """
     url = 'https://api.anthropic.com/v1/messages'
     try:
         api_key = st.secrets['ANTHROPIC_API_KEY']
     except:
-        return "Error: No ANTHROPIC_API_KEY found in st.secrets."
+        return "Error: No ANTHROPIC_API_KEY found in st.secrets.", {}, ""
+    
     headers = {
         'anthropic-version': '2023-06-01',
         'x-api-key': api_key,
         'content-type': 'application/json',
     }
-    # Build messages array from conversation history
+    
     messages = []
     if conversation_history:
         messages.extend(conversation_history)
@@ -521,34 +543,38 @@ def query_claude_api(message: str, conversation_history: list = None) -> str:
         'role': 'user',
         'content': message
     })
+    
     payload = {
         'model': 'claude-3-5-sonnet-20241022',
         'max_tokens': 5000,
         'messages': messages
     }
+    
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=240)
         response.raise_for_status()
         response_data = response.json()
+        raw_response = json.dumps(response_data, indent=2)
+        
         if 'content' in response_data:
             content = response_data['content']
             if isinstance(content, list):
                 text = ''.join(block.get('text', '') for block in content)
             else:
                 text = str(content)
-            # Add the response to conversation history if provided
+            
             if conversation_history is not None:
                 conversation_history.append({
                     'role': 'assistant',
                     'content': text
                 })
-            return text
-        return "Could not extract content from Anthropic response."
+            return text, response_data.get('usage', {}), raw_response
+        return "Could not extract content from Anthropic response.", {}, raw_response
     except requests.exceptions.RequestException as e:
         error_message = f"API request failed: {str(e)}"
         if hasattr(e, 'response') and e.response is not None:
             error_message += f"\nResponse: {e.response.text}"
-        return error_message
+        return error_message, {}, str(e)
 
 def query_groq_api(message: str, conversation_history: list = None) -> str:
     """
@@ -598,17 +624,17 @@ def query_groq_api(message: str, conversation_history: list = None) -> str:
             error_message += f"\nResponse: {e.response.text}"
         return error_message
 
-def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[str, dict]:
+def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[str, dict, str]:
     """
     Calls OpenAI's Chat Completion API (ChatGPT) with conversation history support.
     Requires st.secrets['OPENAI_API_KEY'] to be set.
-    Returns a tuple of (response_content, token_usage)
+    Returns a tuple of (response_content, token_usage, raw_response)
     """
     url = "https://api.openai.com/v1/chat/completions"
     try:
         api_key = st.secrets["OPENAI_API_KEY"]
     except:
-        return "Error: No OPENAI_API_KEY found in st.secrets.", {}
+        return "Error: No OPENAI_API_KEY found in st.secrets.", {}, ""
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {api_key}'
@@ -629,25 +655,36 @@ def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[
         response = requests.post(url, headers=headers, json=payload, timeout=240)
         response.raise_for_status()
         response_data = response.json()
+        raw_response = json.dumps(response_data, indent=2)
+        
         if "choices" in response_data and len(response_data["choices"]) > 0:
             content = response_data["choices"][0]["message"]["content"]
             token_usage = response_data.get("usage", {})
+            
             if conversation_history is not None:
                 conversation_history.append({
                     'role': 'assistant',
                     'content': content
                 })
-            return content, token_usage
-        return "Could not extract content from ChatGPT response.", {}
+            return content, token_usage, raw_response
+            
+        return "Could not extract content from ChatGPT response.", {}, raw_response
+        
     except requests.exceptions.RequestException as e:
         error_message = f"API request failed: {str(e)}"
         if hasattr(e, 'response') and e.response is not None:
             error_message += f"\nResponse: {e.response.text}"
-        return error_message, {}
+            raw_error = e.response.text
+        else:
+            raw_error = str(e)
+        return error_message, {}, raw_error
+    except Exception as e:
+        return f"Unexpected error: {str(e)}", {}, str(e)
 
-def query_llm_api(message: str, conversation_history: list = None) -> str:
+def query_llm_api(message: str, conversation_history: list = None) -> tuple[str, dict, str]:
     """
     Dispatches the API call to the selected LLM based on the sidebar model selection.
+    Returns: (processed_response, token_usage, raw_response)
     """
     model = st.session_state.get('selected_model', 'Claude')
     if model == "Claude":
@@ -657,7 +694,7 @@ def query_llm_api(message: str, conversation_history: list = None) -> str:
     elif model == "ChatGPT (o1)":
         return query_chatgpt_api(message, conversation_history)
     else:
-        return "Selected model not supported."
+        return "Selected model not supported.", {}, ""
 
 # --------------------------------------------------------------------
 # 5) Optional Website Scraping
@@ -814,7 +851,7 @@ Given the following details:
 Suggest 5 potential article topics.
 """
                 with st.spinner("Generating topic suggestions..."):
-                    suggestions_raw, token_usage = query_llm_api(prompt_for_topics)
+                    suggestions_raw, token_usage, raw_response = query_llm_api(prompt_for_topics)
                 # Display token usage and costs for this iteration
                 costs = calculate_token_costs(token_usage)
                 st.write(f"""
@@ -823,6 +860,9 @@ Suggest 5 potential article topics.
 - Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
 - Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
 """)
+                if debug_mode:
+                    st.write("**Raw API Response:**")
+                    st.code(raw_response, language="json")
                 st.session_state["topic_suggestions"] = suggestions_raw.split("\n")
                 st.success("See suggested topics below.")
             if st.session_state["topic_suggestions"]:
@@ -881,7 +921,7 @@ We have these details for a new article:
 Suggest 5 potential article topics.
 """
             with st.spinner("Generating topic suggestions..."):
-                suggestions_raw, token_usage = query_llm_api(prompt_for_topics)
+                suggestions_raw, token_usage, raw_response = query_llm_api(prompt_for_topics)
             # Display token usage and costs for this iteration
             costs = calculate_token_costs(token_usage)
             st.write(f"""
@@ -890,6 +930,9 @@ Suggest 5 potential article topics.
 - Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
 - Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
 """)
+            if debug_mode:
+                st.write("**Raw API Response:**")
+                st.code(raw_response, language="json")
             st.session_state["topic_suggestions"] = suggestions_raw.split("\n")
             st.success("See suggested topics below.")
         if st.session_state["topic_suggestions"]:
@@ -1119,13 +1162,14 @@ Return ONLY a JSON object with this structure:
             final_response = None
             while iteration <= max_iterations:
                 with st.spinner(f"Generating full article (Iteration {iteration}/{max_iterations})..."):
-                    response, token_usage = query_llm_api(full_article_prompt)
+                    response, token_usage, raw_response = query_llm_api(full_article_prompt)
                     # Store token usage in history
                     st.session_state["token_usage_history"].append({
                         "iteration": iteration,
                         "timestamp": datetime.now().strftime("%H:%M:%S"),
                         "usage": token_usage
                     })
+                    
                     # Display token usage and costs for this iteration
                     costs = calculate_token_costs(token_usage)
                     st.write(f"""
@@ -1134,13 +1178,25 @@ Return ONLY a JSON object with this structure:
 - Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
 - Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
 """)
+                    
+                    if debug_mode:
+                        st.write("**Raw API Response:**")
+                        st.code(raw_response, language="json")
                 try:
-                    start_idx = response.find('{')
-                    end_idx = response.rfind('}')
-                    if start_idx == -1 or end_idx == -1:
-                        raise json.JSONDecodeError("No valid JSON found", response, 0)
-                    json_str = response[start_idx:end_idx+1]
-                    full_response = json.loads(json_str)
+                    # Clean and parse the JSON response
+                    try:
+                        json_str = clean_json_response(response)
+                        full_response = json.loads(json_str)
+                    except ValueError as ve:
+                        st.error(f"Failed to extract JSON: {str(ve)}")
+                        # Try one more time with the raw response
+                        try:
+                            full_response = json.loads(response)
+                        except json.JSONDecodeError:
+                            st.error("Could not parse response as JSON. Retrying generation...")
+                            iteration = 1  # Reset iteration counter
+                            continue
+                    
                     full_article = full_response.get("article_content", "")
                     meta_title = full_response.get("meta_title", "")
                     meta_desc = full_response.get("meta_description", "")
@@ -1363,26 +1419,33 @@ def get_care_area_details(comm_manager, community_id):
     detailed_care_areas = []
     
     for care_area in care_areas:
+        # Convert SQLite Row to dict
+        care_area = dict(care_area)
+        
         # Get floor plans for this care area
         floor_plans = comm_manager.get_floor_plans(care_area["id"])
         floor_plan_details = []
         for fp in floor_plans:
+            # Convert floor plan SQLite Row to dict
+            fp = dict(fp)
             floor_plan_details.append(
-                f"- {fp['name']}: {fp.get('bedrooms', 'N/A')} bed/{fp.get('bathrooms', 'N/A')} bath, {fp.get('square_footage', 'N/A')} sq ft"
+                f"- {fp.get('name', 'N/A')}: {fp.get('bedrooms', 'N/A')} bed/{fp.get('bathrooms', 'N/A')} bath, {fp.get('square_footage', 'N/A')} sq ft"
             )
-            
+        
         # Get SAAs (Services, Activities, Amenities)
         saas = comm_manager.get_saas(care_area["id"])
         saa_by_type = {}
         for saa in saas:
-            saa_type = saa["type"]
+            # Convert SAA SQLite Row to dict
+            saa = dict(saa)
+            saa_type = saa.get("type", "Other")
             if saa_type not in saa_by_type:
                 saa_by_type[saa_type] = []
-            saa_by_type[saa_type].append(saa["description"])
+            saa_by_type[saa_type].append(saa.get("description", ""))
             
         # Build care area detail string using updated column names
         care_area_info = f"""
-Care Area: {care_area['care_area']}
+Care Area: {care_area.get('care_area', 'N/A')}
 Description: {care_area.get('general_floor_plan_description', 'N/A')}
 Starting Price: ${care_area.get('floor_plan_starting_at_price', 'N/A')} {care_area.get('floor_plan_billing_period', 'N/A')}
 Care Area URL: {care_area.get('care_area_url', 'N/A')}
@@ -1463,13 +1526,18 @@ Ensure the revised article speaks directly to the community's audience and inclu
 Return only the revised article text.
 """
                     with st.spinner("Generating community-specific revision..."):
-                        revised_article_text, token_usage = query_llm_api(revision_prompt)
+                        revised_article_text, token_usage, raw_response = query_llm_api(revision_prompt)
+                        # Calculate costs from token usage
+                        costs = calculate_token_costs(token_usage)
                         st.write(f"""
 **Token Usage & Costs:**
-- Input: {token_usage['prompt_tokens']:,} tokens (${token_usage['input_cost']:.4f})
-- Output: {token_usage['completion_tokens']:,} tokens (${token_usage['output_cost']:.4f})
-- Total: {token_usage['total_tokens']:,} tokens (${token_usage['total_cost']:.4f})
+- Input: {costs['prompt_tokens']:,} tokens (${costs['input_cost']:.4f})
+- Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
+- Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
 """)
+                        if debug_mode:
+                            st.write("**Raw API Response:**")
+                            st.code(raw_response, language="json")
                         
                         new_rev_title = f"{article_row['article_title']} - Community Revision for {community['community_name']}"
                         # Convert SQLite Row to dict to use get() method
@@ -1507,3 +1575,4 @@ if debug_mode:
     })
     all_projects_debug = [dict(p) for p in projects]
     st.write("All Projects:", all_projects_debug)
+
