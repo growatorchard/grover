@@ -11,8 +11,10 @@ from dotenv import load_dotenv
 
 load_dotenv()  # This loads environment variables from .env
 
+TARGET_AUDIENCES = ["Seniors", "Adult Children", "Caregivers", "Health Professionals", "Other"]
+
 # --------------------------------------------------------------------
-# 1) Database Manager (SQLite)
+# 1) Database Manager (SQLite) for Grover Projects
 # --------------------------------------------------------------------
 class DatabaseManager:
     def __init__(self):
@@ -286,9 +288,30 @@ class DatabaseManager:
             cursor.execute("DELETE FROM base_article_content WHERE id = ?", (article_id,))
             return cursor.rowcount > 0
 
+# --------------------------------------------------------------------
+# 2) Community Manager (SQLite) for Senior Living Communities
+# --------------------------------------------------------------------
+class CommunityManager:
+    def __init__(self):
+        # Connect to the communities database file
+        self.conn = sqlite3.connect("senior_living.db", check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self.cursor = self.conn.cursor()
+
+    def get_communities(self):
+        self.cursor.execute("SELECT * FROM communities ORDER BY community_name")
+        return self.cursor.fetchall()
+
+    def get_community(self, community_id):
+        self.cursor.execute("SELECT * FROM communities WHERE id = ?", (community_id,))
+        return self.cursor.fetchone()
+
+    def get_care_areas(self, community_id):
+        self.cursor.execute("SELECT * FROM care_areas WHERE community_id = ?", (community_id,))
+        return self.cursor.fetchall()
 
 # --------------------------------------------------------------------
-# 2) SEMrush Query Code
+# 3) SEMrush Query Code
 # --------------------------------------------------------------------
 def build_semrush_url(api_type, phrase, api_key, database='us',
                       export_columns='', display_limit=None, debug_mode=False):
@@ -320,7 +343,6 @@ def parse_semrush_response(response_text, debug_mode=False):
 
     headers = lines[0].split(';')
     raw_rows = [line.split(';') for line in lines[1:]]
-
     data = []
     for row_values in raw_rows:
         if len(row_values) != len(headers):
@@ -329,7 +351,6 @@ def parse_semrush_response(response_text, debug_mode=False):
         for h, val in zip(headers, row_values):
             row_dict[h] = val
         data.append(row_dict)
-
     return data
 
 def query_semrush_api(keyword, database='us', debug_mode=False):
@@ -337,7 +358,6 @@ def query_semrush_api(keyword, database='us', debug_mode=False):
     api_key = os.getenv("SEMRUSH_API_KEY", "")
     if not api_key:
         return {'error': "No SEMRUSH_API_KEY found in .env"}
-
     try:
         # 1) Overview
         overview_url = build_semrush_url(
@@ -353,7 +373,6 @@ def query_semrush_api(keyword, database='us', debug_mode=False):
             raise ValueError(
                 f"Overview request error (HTTP {overview_resp.status_code}): {overview_resp.text}"
             )
-
         overview_data = parse_semrush_response(overview_resp.text, debug_mode=debug_mode)
         if not overview_data:
             return {
@@ -361,7 +380,6 @@ def query_semrush_api(keyword, database='us', debug_mode=False):
                 'related_keywords': [],
                 'error': "No overview data"
             }
-
         main_raw = overview_data[0]
         overview_obj = {
             'Ph':  main_raw.get('Keyword', keyword),
@@ -372,7 +390,6 @@ def query_semrush_api(keyword, database='us', debug_mode=False):
             'Nr':  main_raw.get('Number of Results', "0"),
             'Td':  main_raw.get('Trends', "0"),
         }
-
         # 2) Related
         related_url = build_semrush_url(
             api_type='phrase_related',
@@ -388,7 +405,6 @@ def query_semrush_api(keyword, database='us', debug_mode=False):
             raise ValueError(
                 f"Related request error (HTTP {related_resp.status_code}): {related_resp.text}"
             )
-
         related_data = parse_semrush_response(related_resp.text, debug_mode=debug_mode)
         related_list = []
         for rd in related_data:
@@ -401,13 +417,11 @@ def query_semrush_api(keyword, database='us', debug_mode=False):
                 'Nr':  rd.get('Number of Results', "0"),
                 'Td':  rd.get('Trends', "0")
             })
-
         return {
             'overview': overview_obj,
             'related_keywords': related_list,
             'error': None
         }
-
     except Exception as e:
         return {
             'overview': None,
@@ -420,7 +434,6 @@ def get_keyword_suggestions(topic, debug_mode=False):
     results = query_semrush_api(topic, debug_mode=debug_mode)
     if results.get('error'):
         return results
-
     return {
         'main_keyword': results['overview'],
         'related_keywords': results['related_keywords'],
@@ -431,7 +444,6 @@ def format_keyword_report(keyword_data):
     """Format keyword data into a readable report."""
     if not keyword_data or keyword_data.get('error'):
         return "No keyword data available"
-
     lines = ["Keyword Research Report:\n"]
     main = keyword_data.get('main_keyword')
     if main:
@@ -440,7 +452,6 @@ def format_keyword_report(keyword_data):
         lines.append(f"- Difficulty: {main['Kd']}")
         lines.append(f"- CPC: {main['CpC']}")
         lines.append("")
-
     related = keyword_data.get('related_keywords', [])
     if related:
         lines.append("**Related Keywords**:")
@@ -448,9 +459,8 @@ def format_keyword_report(keyword_data):
             lines.append(f" - {kw['Ph']} (Vol={kw['Vo']}, Diff={kw['Kd']})")
     return "\n".join(lines)
 
-
 # --------------------------------------------------------------------
-# 3) LLM Query Functions
+# 4) LLM Query Functions
 # --------------------------------------------------------------------
 def query_claude_api(message: str, conversation_history: list = None) -> str:
     """
@@ -462,13 +472,11 @@ def query_claude_api(message: str, conversation_history: list = None) -> str:
         api_key = st.secrets['ANTHROPIC_API_KEY']
     except:
         return "Error: No ANTHROPIC_API_KEY found in st.secrets."
-
     headers = {
         'anthropic-version': '2023-06-01',
         'x-api-key': api_key,
         'content-type': 'application/json',
     }
-
     # Build messages array from conversation history
     messages = []
     if conversation_history:
@@ -477,25 +485,21 @@ def query_claude_api(message: str, conversation_history: list = None) -> str:
         'role': 'user',
         'content': message
     })
-
     payload = {
         'model': 'claude-3-5-sonnet-20241022',
         'max_tokens': 5000,
         'messages': messages
     }
-
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response = requests.post(url, headers=headers, json=payload, timeout=240)
         response.raise_for_status()
         response_data = response.json()
-        
         if 'content' in response_data:
             content = response_data['content']
             if isinstance(content, list):
                 text = ''.join(block.get('text', '') for block in content)
             else:
                 text = str(content)
-            
             # Add the response to conversation history if provided
             if conversation_history is not None:
                 conversation_history.append({
@@ -503,9 +507,7 @@ def query_claude_api(message: str, conversation_history: list = None) -> str:
                     'content': text
                 })
             return text
-
         return "Could not extract content from Anthropic response."
-
     except requests.exceptions.RequestException as e:
         error_message = f"API request failed: {str(e)}"
         if hasattr(e, 'response') and e.response is not None:
@@ -522,12 +524,10 @@ def query_groq_api(message: str, conversation_history: list = None) -> str:
         api_key = st.secrets['GROQ_API_KEY']
     except:
         return "Error: No GROQ_API_KEY found in st.secrets."
-
     headers = {
         'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json'
     }
-
     # Build messages array from conversation history
     messages = []
     if conversation_history:
@@ -536,22 +536,18 @@ def query_groq_api(message: str, conversation_history: list = None) -> str:
         'role': 'user',
         'content': message
     })
-
     payload = {
         'model': 'llama-70b-v2',
         'messages': messages,
         'temperature': 0.7,
         'max_tokens': 4096
     }
-
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response = requests.post(url, headers=headers, json=payload, timeout=240)
         response.raise_for_status()
         response_data = response.json()
-        
         if 'choices' in response_data and len(response_data['choices']) > 0:
             content = response_data['choices'][0]['message']['content']
-            
             # Add the response to conversation history if provided
             if conversation_history is not None:
                 conversation_history.append({
@@ -559,31 +555,28 @@ def query_groq_api(message: str, conversation_history: list = None) -> str:
                     'content': content
                 })
             return content
-
         return "Could not extract content from Groq response."
-
     except requests.exceptions.RequestException as e:
         error_message = f"API request failed: {str(e)}"
         if hasattr(e, 'response') and e.response is not None:
             error_message += f"\nResponse: {e.response.text}"
         return error_message
 
-def query_chatgpt_api(message: str, conversation_history: list = None) -> str:
+def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[str, dict]:
     """
     Calls OpenAI's Chat Completion API (ChatGPT) with conversation history support.
     Requires st.secrets['OPENAI_API_KEY'] to be set.
+    Returns a tuple of (response_content, token_usage)
     """
     url = "https://api.openai.com/v1/chat/completions"
     try:
         api_key = st.secrets["OPENAI_API_KEY"]
     except:
-        return "Error: No OPENAI_API_KEY found in st.secrets."
-
+        return "Error: No OPENAI_API_KEY found in st.secrets.", {}
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {api_key}'
     }
-
     messages = []
     if conversation_history:
         messages.extend(conversation_history)
@@ -591,33 +584,30 @@ def query_chatgpt_api(message: str, conversation_history: list = None) -> str:
         'role': 'user',
         'content': message
     })
-
     payload = {
-        # "model": "o1-2024-12-17",
-        "model": "gpt-4o",
+        "model": "o1-mini",
         "messages": messages,
-        "temperature": 0.7,
-        "max_tokens": 20000
+        "max_completion_tokens": 20000
     }
-
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response = requests.post(url, headers=headers, json=payload, timeout=240)
         response.raise_for_status()
         response_data = response.json()
         if "choices" in response_data and len(response_data["choices"]) > 0:
             content = response_data["choices"][0]["message"]["content"]
+            token_usage = response_data.get("usage", {})
             if conversation_history is not None:
                 conversation_history.append({
                     'role': 'assistant',
                     'content': content
                 })
-            return content
-        return "Could not extract content from ChatGPT response."
+            return content, token_usage
+        return "Could not extract content from ChatGPT response.", {}
     except requests.exceptions.RequestException as e:
         error_message = f"API request failed: {str(e)}"
         if hasattr(e, 'response') and e.response is not None:
             error_message += f"\nResponse: {e.response.text}"
-        return error_message
+        return error_message, {}
 
 def query_llm_api(message: str, conversation_history: list = None) -> str:
     """
@@ -633,9 +623,8 @@ def query_llm_api(message: str, conversation_history: list = None) -> str:
     else:
         return "Selected model not supported."
 
-
 # --------------------------------------------------------------------
-# 4) Optional Website Scraping
+# 5) Optional Website Scraping
 # --------------------------------------------------------------------
 def scrape_website(url):
     """Scrape textual content from a single webpage."""
@@ -648,11 +637,9 @@ def scrape_website(url):
         r_robots = requests.get(robots_url, timeout=5)
         if r_robots.status_code == 200 and "Disallow: /" in r_robots.text:
             return "Website disallows scraping (robots.txt)."
-
         r_page = requests.get(url, timeout=10)
         if r_page.status_code != 200:
             return f"Failed to retrieve page (HTTP {r_page.status_code})."
-
         soup = BeautifulSoup(r_page.text, "html.parser")
         for tag in soup(["script", "style"]):
             tag.decompose()
@@ -661,18 +648,35 @@ def scrape_website(url):
     except Exception as e:
         return f"Error scraping site: {e}"
 
-
 # --------------------------------------------------------------------
-# 5) Streamlit App
+# 6) Streamlit App Setup
 # --------------------------------------------------------------------
-
 db = DatabaseManager()
+comm_manager = CommunityManager()
+
 st.set_page_config(page_title="Grover (LLM's + SEMrush)", layout="wide")
 st.title("Grover: LLM Based, with SEMrush Keyword Research")
 
-debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
+# Initialize session state variables if they don't exist
+if "drafts_by_article" not in st.session_state:
+    st.session_state["drafts_by_article"] = {}
+if "meta_title_by_article" not in st.session_state:
+    st.session_state["meta_title_by_article"] = {}
+if "meta_desc_by_article" not in st.session_state:
+    st.session_state["meta_desc_by_article"] = {}
+if "refine_instructions_by_article" not in st.session_state:
+    st.session_state["refine_instructions_by_article"] = {}
+if "topic_suggestions" not in st.session_state:
+    st.session_state["topic_suggestions"] = []
+if "selected_topic" not in st.session_state:
+    st.session_state["selected_topic"] = ""
+if "article_brief" not in st.session_state:
+    st.session_state["article_brief"] = ""
 
-# Add model selector including ChatGPT (o1)
+# --------------------------------------------------------------------
+# Sidebar: LLM Model Selector
+# --------------------------------------------------------------------
+debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
 model_options = {
     "Claude": "claude-3-5-sonnet-20241022",
     "Groq (Llama-70B)": "llama-70b-v2",
@@ -680,174 +684,83 @@ model_options = {
 }
 st.session_state['selected_model'] = st.sidebar.selectbox("Select Model", list(model_options.keys()))
 
-# Predefined dropdown options
-journey_stage_options = ["Awareness", "Consideration", "Decision", "Retention", "Advocacy", "Other"]
-article_category_options = ["Senior Living", "Health/Wellness", "Lifestyle", "Financial", "Other"]
-business_category_options = ["Healthcare", "Senior Living", "Housing", "Lifestyle", "Other"]
-format_type_options = [
-    "Blog", "Case Study", "White Paper", "Guide", "Downloadable Guide", "Review",
-    "Interactives", "Brand Content", "Infographic", "E-Book", "Email", "Social Media Posts",
-    "User Generated Content", "Meme", "Checklist", "Video", "Podcast", "Other"
-]
-care_area_options = ["Independent Living", "Assisted Living", "Memory Care", "Skilled Nursing"]
-tone_of_voice_options = ["Professional", "Friendly", "Conversational", "Empathetic", "Other"]
-target_audience_options = ["Seniors", "Adult Children", "Caregivers", "Health Professionals", "Other"]
-consumer_need_options = ["Educational", "Financial Guidance", "Medical Info", "Lifestyle/Wellness", "Other"]
-
-def dynamic_selectbox(label, options, default_val):
-    """
-    Show a selectbox with an "Other" option.
-    If the user picks "Other", show a text input to override.
-    Returns final chosen string.
-    """
-    if default_val and default_val not in options and default_val.strip():
-        options = options + [default_val]
-
-    choice = st.selectbox(label, options, index=options.index(default_val) if default_val in options else 0)
-    if choice == "Other":
-        choice = st.text_input(f"{label} - custom value", value="" if default_val in options else default_val)
-    return choice or ""
-
-def dynamic_multiselect(label, options, default_vals):
-    """
-    For care_areas.
-    If user has any values not in options, add them.
-    """
-    extra_vals = [v for v in default_vals if v not in options]
-    final_options = options + extra_vals if extra_vals else options
-    selection = st.multiselect(label, final_options, default=default_vals)
-    return selection
-
 # --------------------------------------------------------------------
-# Store article data in session by article_id
+# Sidebar: Project Selection
 # --------------------------------------------------------------------
-if "drafts_by_article" not in st.session_state:
-    st.session_state["drafts_by_article"] = {}
-
-if "refine_instructions_by_article" not in st.session_state:
-    st.session_state["refine_instructions_by_article"] = {}
-
-if "meta_title_by_article" not in st.session_state:
-    st.session_state["meta_title_by_article"] = {}
-
-if "meta_desc_by_article" not in st.session_state:
-    st.session_state["meta_desc_by_article"] = {}
-
-if "section_conversations" not in st.session_state:
-    st.session_state.section_conversations = {}
-
-def get_current_draft(aid):
-    return st.session_state["drafts_by_article"].get(aid, "")
-
-def set_current_draft(aid, text):
-    st.session_state["drafts_by_article"][aid] = text
-
-def get_refine_instructions(aid):
-    return st.session_state["refine_instructions_by_article"].get(aid, "")
-
-def set_refine_instructions(aid, text):
-    st.session_state["refine_instructions_by_article"][aid] = text
-
-def get_meta_title(aid):
-    return st.session_state["meta_title_by_article"].get(aid, "")
-
-def set_meta_title(aid, text):
-    st.session_state["meta_title_by_article"][aid] = text
-
-def get_meta_desc(aid):
-    return st.session_state["meta_desc_by_article"].get(aid, "")
-
-def set_meta_desc(aid, text):
-    st.session_state["meta_desc_by_article"][aid] = text
-
-
-# -- Sidebar: Project Selection --
 projects = db.get_all_projects()
 project_names = ["Create New Project"] + [f"{p['name']} (ID: {p['id']})" for p in projects]
 selected_project_str = st.sidebar.selectbox("Select Project", project_names)
-
 if "project_id" not in st.session_state:
     st.session_state["project_id"] = None
-
 if selected_project_str == "Create New Project":
     st.session_state["project_id"] = None
 else:
     proj_id = int(selected_project_str.split("ID:")[-1].replace(")", "").strip())
     if st.session_state["project_id"] != proj_id:
         st.session_state["project_id"] = proj_id
-
-# -- Delete project button --
 if st.session_state["project_id"]:
     if st.sidebar.button("Delete Project"):
         db.delete_project(st.session_state["project_id"])
         st.session_state["project_id"] = None
-        st.experimental_rerun()
+        st.rerun()
 
-# -- Sidebar: Article Selection (only if a project is chosen) --
+# --------------------------------------------------------------------
+# Sidebar: Article Selection (only if a project is chosen)
+# --------------------------------------------------------------------
 if "article_id" not in st.session_state:
     st.session_state["article_id"] = None
-
 if st.session_state["project_id"]:
     articles = db.get_all_articles_for_project(st.session_state["project_id"])
     article_names = ["Create New Article"] + [f"{a['article_title']} (ID: {a['id']})" for a in articles]
     selected_article_str = st.sidebar.selectbox("Select Article (within Project)", article_names)
-
     if selected_article_str == "Create New Article":
         st.session_state["article_id"] = None
     else:
         article_id = int(selected_article_str.split("ID:")[-1].replace(")", "").strip())
         st.session_state["article_id"] = article_id
-
-    # Delete article button
     if st.session_state["article_id"]:
         if st.sidebar.button("Delete Article"):
             db.delete_article_content(st.session_state["article_id"])
             st.success("Article content deleted.")
             st.session_state["article_id"] = None
-            st.experimental_rerun()
+            st.rerun()
 
-
+# --------------------------------------------------------------------
 # 1) Create / Update Project
+# --------------------------------------------------------------------
 with st.expander("1) Create or Update Project", expanded=(st.session_state["project_id"] is None)):
     if "topic_suggestions" not in st.session_state:
         st.session_state["topic_suggestions"] = []
     if "selected_topic" not in st.session_state:
         st.session_state["selected_topic"] = ""
-
     if st.session_state["project_id"]:
-        # Existing project
         proj_data = db.get_project(st.session_state["project_id"])
         if proj_data:
             proj_data = dict(proj_data)
             st.write(f"**Loaded Project**: {proj_data['name']} (ID: {proj_data['id']})")
-
             existing_care_areas = json.loads(proj_data.get("care_areas", "[]")) if proj_data.get("care_areas") else []
             existing_notes = {}
             try:
                 existing_notes = json.loads(proj_data.get("notes") or "{}")
             except:
                 existing_notes = {}
-
             def_need = existing_notes.get("consumer_need", "")
             def_tone = existing_notes.get("tone_of_voice", "")
             def_audience = existing_notes.get("target_audience", "")
             def_topic = existing_notes.get("topic", "")
             freeform_notes = existing_notes.get("freeform_notes", "")
-
             upd_name = st.text_input("Project Name", value=proj_data["name"])
-            upd_journey = dynamic_selectbox("Consumer Journey Stage", journey_stage_options, proj_data.get("journey_stage", "Awareness"))
-            upd_category = dynamic_selectbox("Article Category", article_category_options, proj_data.get("category", "Senior Living"))
-            upd_care_areas = dynamic_multiselect("Care Area(s)", care_area_options, existing_care_areas)
-            upd_format = dynamic_selectbox("Format Type", format_type_options, proj_data.get("format_type", "Blog"))
-            upd_bizcat = dynamic_selectbox("Business Category", business_category_options, proj_data.get("business_category", "Senior Living"))
-            upd_need = dynamic_selectbox("Consumer Need", consumer_need_options, def_need)
-            upd_tone = dynamic_selectbox("Tone of Voice", tone_of_voice_options, def_tone)
-            upd_audience = dynamic_selectbox("Target Audience", target_audience_options, def_audience)
-
+            upd_journey = st.selectbox("Consumer Journey Stage", ["Awareness", "Consideration", "Decision", "Retention", "Advocacy", "Other"], index=0)
+            upd_category = st.selectbox("Article Category", ["Senior Living", "Health/Wellness", "Lifestyle", "Financial", "Other"], index=0)
+            upd_care_areas = st.multiselect("Care Area(s)", ["Independent Living", "Assisted Living", "Memory Care", "Skilled Nursing"], default=existing_care_areas)
+            upd_format = st.selectbox("Format Type", ["Blog", "Case Study", "White Paper", "Guide", "Downloadable Guide", "Review", "Interactives", "Brand Content", "Infographic", "E-Book", "Email", "Social Media Posts", "User Generated Content", "Meme", "Checklist", "Video", "Podcast", "Other"], index=0)
+            upd_bizcat = st.selectbox("Business Category", ["Healthcare", "Senior Living", "Housing", "Lifestyle", "Other"], index=0)
+            upd_need = st.selectbox("Consumer Need", ["Educational", "Financial Guidance", "Medical Info", "Lifestyle/Wellness", "Other"], index=0)
+            upd_tone = st.selectbox("Tone of Voice", ["Professional", "Friendly", "Conversational", "Empathetic", "Other"], index=0)
+            upd_audience = st.multiselect("Target Audience", TARGET_AUDIENCES, default=existing_notes.get("target_audience", []))
             st.write("#### Topic & Freeform Notes")
             upd_topic = st.text_input("Topic (Optional)", value=def_topic)
             upd_notes_text = st.text_area("Additional Notes", value=freeform_notes)
-
             if st.button("Generate 5 Topics"):
                 prompt_for_topics = f"""
 Given the following details:
@@ -858,22 +771,21 @@ Given the following details:
 - Business Category: {upd_bizcat}
 - Consumer Need: {upd_need}
 - Tone of Voice: {upd_tone}
-- Target Audience: {upd_audience}
+- Target Audience: {', '.join(upd_audience)}
 
 Suggest 5 potential article topics.
 """
                 with st.spinner("Generating topic suggestions..."):
-                    suggestions_raw = query_llm_api(prompt_for_topics)
+                    suggestions_raw, token_usage = query_llm_api(prompt_for_topics)
+                st.write(f"Token usage: {token_usage}")
                 st.session_state["topic_suggestions"] = suggestions_raw.split("\n")
                 st.success("See suggested topics below.")
-
             if st.session_state["topic_suggestions"]:
                 chosen_suggestion = st.selectbox("Choose a generated topic:", st.session_state["topic_suggestions"])
                 if st.button("Use Selected Topic"):
                     upd_topic = chosen_suggestion
                     st.session_state["topic_suggestions"] = []
                     st.success(f"Topic set to: {chosen_suggestion}")
-
             if st.button("Update Project"):
                 final_notes_json = {
                     "consumer_need": upd_need,
@@ -882,7 +794,6 @@ Suggest 5 potential article topics.
                     "freeform_notes": upd_notes_text,
                     "topic": upd_topic,
                 }
-
                 patch = {
                     "name": upd_name,
                     "care_areas": upd_care_areas,
@@ -894,28 +805,22 @@ Suggest 5 potential article topics.
                 }
                 db.update_project_state(proj_data["id"], patch)
                 st.success("Project updated.")
-
     else:
-        # Create a new project
         st.write("**Create a New Project**")
-
         new_name = st.text_input("Project Name")
-        new_journey = dynamic_selectbox("Consumer Journey Stage", journey_stage_options, "Awareness")
-        new_category = dynamic_selectbox("Article Category", article_category_options, "Senior Living")
-        new_care_areas = dynamic_multiselect("Care Area(s)", care_area_options, [])
-        new_format = dynamic_selectbox("Format Type", format_type_options, "Blog")
-        new_bizcat = dynamic_selectbox("Business Category", business_category_options, "Senior Living")
-        new_need = dynamic_selectbox("Consumer Need", consumer_need_options, "Educational")
-        new_tone = dynamic_selectbox("Tone of Voice", tone_of_voice_options, "Professional")
-        new_audience = dynamic_selectbox("Target Audience", target_audience_options, "Seniors")
-
+        new_journey = st.selectbox("Consumer Journey Stage", ["Awareness", "Consideration", "Decision", "Retention", "Advocacy", "Other"], index=0)
+        new_category = st.selectbox("Article Category", ["Senior Living", "Health/Wellness", "Lifestyle", "Financial", "Other"], index=0)
+        new_care_areas = st.multiselect("Care Area(s)", ["Independent Living", "Assisted Living", "Memory Care", "Skilled Nursing"], default=[])
+        new_format = st.selectbox("Format Type", ["Blog", "Case Study", "White Paper", "Guide", "Downloadable Guide", "Review", "Interactives", "Brand Content", "Infographic", "E-Book", "Email", "Social Media Posts", "User Generated Content", "Meme", "Checklist", "Video", "Podcast", "Other"], index=0)
+        new_bizcat = st.selectbox("Business Category", ["Healthcare", "Senior Living", "Housing", "Lifestyle", "Other"], index=0)
+        new_need = st.selectbox("Consumer Need", ["Educational", "Financial Guidance", "Medical Info", "Lifestyle/Wellness", "Other"], index=0)
+        new_tone = st.selectbox("Tone of Voice", ["Professional", "Friendly", "Conversational", "Empathetic", "Other"], index=0)
+        new_audience = st.multiselect("Target Audience", TARGET_AUDIENCES, default=[])
         st.write("#### Topic & Freeform Notes")
         new_topic = st.text_input("Topic (Optional)")
         new_notes_text = st.text_area("Additional Notes (optional)")
-
         if "topic_suggestions" not in st.session_state:
             st.session_state["topic_suggestions"] = []
-
         if st.button("Generate 5 Topics"):
             prompt_for_topics = f"""
 We have these details for a new article:
@@ -926,22 +831,21 @@ We have these details for a new article:
 - Business Category: {new_bizcat}
 - Consumer Need: {new_need}
 - Tone of Voice: {new_tone}
-- Target Audience: {new_audience}
+- Target Audience: {', '.join(new_audience)}
 
 Suggest 5 potential article topics.
 """
             with st.spinner("Generating topic suggestions..."):
-                suggestions_raw = query_llm_api(prompt_for_topics)
+                suggestions_raw, token_usage = query_llm_api(prompt_for_topics)
+            st.write(f"Token usage: {token_usage}")
             st.session_state["topic_suggestions"] = suggestions_raw.split("\n")
             st.success("See suggested topics below.")
-
         if st.session_state["topic_suggestions"]:
             chosen_suggestion = st.selectbox("Choose a generated topic:", st.session_state["topic_suggestions"])
             if st.button("Use Selected Topic"):
                 new_topic = chosen_suggestion
                 st.success(f"Topic set to: {chosen_suggestion}")
                 st.session_state["topic_suggestions"] = []
-
         if st.button("Create Project"):
             if new_name.strip():
                 final_notes_json = {
@@ -963,12 +867,13 @@ Suggest 5 potential article topics.
                 new_id = db.create_project(p_data)
                 st.session_state["project_id"] = new_id
                 st.success(f"Created project '{new_name}' (ID={new_id}).")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Please enter a project name.")
 
-
+# --------------------------------------------------------------------
 # 2) Manage Keywords (SEMrush)
+# --------------------------------------------------------------------
 if st.session_state["project_id"]:
     with st.expander("2) Manage Keywords (SEMrush)"):
         kws = db.get_project_keywords(st.session_state["project_id"])
@@ -982,10 +887,9 @@ if st.session_state["project_id"]:
                 )
                 if col2.button("X", key=f"kwdel_{kw['id']}"):
                     db.delete_keyword(kw["id"])
-                    st.experimental_rerun()
+                    st.rerun()
         else:
             st.info("No keywords yet.")
-
         st.write("---")
         st.write("### Add Keywords Manually")
         primary_kw = st.text_input("Primary Keyword")
@@ -999,23 +903,18 @@ if st.session_state["project_id"]:
                     if line:
                         db.add_keyword(st.session_state["project_id"], line, None, None, None)
             st.success("Keywords saved!")
-            st.experimental_rerun()
-
+            st.rerun()
         st.write("---")
         st.write("### Research with SEMrush")
         if "semrush_results" not in st.session_state:
             st.session_state["semrush_results"] = None
-
         sem_kw = st.text_input("Enter a keyword to research")
-
         if st.button("Research"):
             if not sem_kw.strip():
                 st.warning("Please enter a keyword to research.")
             else:
                 data = get_keyword_suggestions(sem_kw.strip(), debug_mode=debug_mode)
                 st.session_state["semrush_results"] = data
-
-        # Display SEMrush results if present in session state
         if st.session_state["semrush_results"]:
             data = st.session_state["semrush_results"]
             if data.get("error"):
@@ -1035,10 +934,10 @@ if st.session_state["project_id"]:
                             st.session_state["project_id"],
                             main_kw['Ph'],
                             main_kw['Vo'],
-                            None,  # search_intent
+                            None,
                             main_kw['Kd']
                         )
-                        st.experimental_rerun()
+                        st.rerun()
                 if related_kws:
                     st.write("**Related Keywords**:")
                     for rk in related_kws:
@@ -1049,13 +948,14 @@ if st.session_state["project_id"]:
                                 st.session_state["project_id"],
                                 rk['Ph'],
                                 rk['Vo'],
-                                None,  # search_intent
+                                None,
                                 rk['Kd']
                             )
-                            st.experimental_rerun()
+                            st.rerun()
 
-
+# --------------------------------------------------------------------
 # 3) Article Brief
+# --------------------------------------------------------------------
 if st.session_state["project_id"]:
     with st.expander("3) Article Brief"):
         if "article_brief" not in st.session_state:
@@ -1068,235 +968,11 @@ if st.session_state["project_id"]:
         if st.button("Save Brief"):
             st.success("Brief saved (in session).")
 
-
 # --------------------------------------------------------------------
-# 4) Generate & Refine (LLM)
+# 4) Generate & Refine Article (LLM)
 # --------------------------------------------------------------------
-def clean_article_text(content, debug_mode=False):
-    """Remove word count markers and keyword markers from article text (if desired)."""
-    if not content:
-        return ""
-    if debug_mode:
-        # If debug mode, keep markers so we can see them
-        return content
-    # Remove the numeric markers like (1), (2), etc.
-    cleaned = re.sub(r"\(\d+\)", "", content)
-    return cleaned
-
-def generate_article_with_validation(prompt_msg, keywords, max_attempts=5, debug_mode=False):
-    """
-    Each attempt re-runs the SAME prompt from scratch.
-    If at any attempt we pass certain validations (like including keywords),
-    return that result. Otherwise, after max_attempts, return the final attempt's data.
-    """
-    final_attempt_output = ""
-    final_attempt_parsed = {}
-
-    for attempt in range(1, max_attempts + 1):
-        with st.spinner(f"Generating article & meta from LLM (Attempt {attempt}/{max_attempts})..."):
-            output = query_llm_api(prompt_msg)
-            final_attempt_output = output  # Store for final usage
-
-            # Try parsing the output as JSON
-            try:
-                start_idx = output.find('{')
-                end_idx = output.rfind('}')
-                if start_idx == -1 or end_idx == -1:
-                    raise json.JSONDecodeError("No valid JSON object found", output, 0)
-
-                json_str = output[start_idx:end_idx + 1]
-                parsed = json.loads(json_str)
-                final_attempt_parsed = parsed
-
-                generated_article = parsed.get("article", "").strip()
-                generated_title = parsed.get("meta_title", "").strip()
-                generated_desc = parsed.get("meta_description", "").strip()
-
-                # Basic checks
-                if not generated_article or not generated_title or not generated_desc:
-                    if debug_mode:
-                        st.write(f"Attempt {attempt}: Missing required fields.")
-                    continue
-
-                # Check that all keywords appear
-                lower_article = generated_article.lower()
-                missing = [kw for kw in keywords if kw.lower() not in lower_article]
-                if missing:
-                    if debug_mode:
-                        st.write(f"Attempt {attempt}: Missing keywords: {missing}")
-                    continue
-
-                # If all checks pass, return the article
-                return generated_article, generated_title, generated_desc
-
-            except json.JSONDecodeError:
-                if debug_mode:
-                    st.write(f"Attempt {attempt}: Could not parse JSON.")
-                continue
-
-    # If all attempts fail, return the final attempt's best-guess data
-    st.error(f"Failed to produce a valid JSON after {max_attempts} attempts.")
-    if final_attempt_parsed:
-        article_text = final_attempt_parsed.get("article", "").strip()
-        meta_title = final_attempt_parsed.get("meta_title", "").strip()
-        meta_desc = final_attempt_parsed.get("meta_description", "").strip()
-        st.info("Showing final attempt's partial output below (validation not passed):")
-        return article_text, meta_title, meta_desc
-    else:
-        # Could not parse final attempt at all
-        return final_attempt_output, "", ""
-
-def generate_section(prompt_msg, section_num, total_sections, previous_sections="", words_so_far=0, target_words=1200, debug_mode=False):
-    """Generate a single section of the article."""
-    # Calculate words per section
-    words_per_section = target_words // total_sections
-    remaining_words = target_words - words_so_far
-    
-    # Get or create conversation history for this section
-    if section_num not in st.session_state.section_conversations:
-        st.session_state.section_conversations[section_num] = []
-    
-    conversation = st.session_state.section_conversations[section_num]
-    
-    section_prompt = f"""
-You are writing a highly focused article based on these requirements:
-{prompt_msg}
-
-STRICT REQUIREMENTS:
-1. Stay focused on the main topic and brief provided above
-2. Follow the project details exactly as specified
-3. Maintain consistent tone and style throughout
-4. Include relevant keywords naturally
-
-Current Progress:
-- This is section {section_num} of {total_sections}
-- Previous sections: 
-{previous_sections}
-
-For this section {section_num}:
-- Target word count: ~{words_per_section} words
-- Remaining total words: {remaining_words}
-- Must continue logically from previous sections
-- Must stay focused on the main topic
-
-Format Requirements:
-1. Start with '## ' followed by an appropriate section title
-2. Mark all specified keywords with (keyword)
-3. Mark all other words with sequential numbers: (1), (2), etc.
-4. Ensure content flows naturally from previous sections
-
-Return ONLY a JSON object with this structure:
-{{
-    "section_content": "The section content with markers",
-    "section_title": "The title used for this section"
-}}"""
-    
-    if debug_mode:
-        st.write(f"### Debug: Full Prompt for Section {section_num}")
-        st.code(section_prompt, language="text")
-    
-    response = query_llm_api(section_prompt, conversation)
-    
-    if debug_mode:
-        st.write(f"### Debug: LLM Response for Section {section_num}")
-        st.code(response, language="text")
-    
-    try:
-        parsed = json.loads(response)
-        
-        if not all(k in parsed for k in ["section_content", "section_title"]):
-            if debug_mode:
-                st.error("Missing required fields in JSON response")
-            return None
-            
-        word_count = len(parsed["section_content"].split())
-        parsed["word_count"] = word_count
-            
-        return parsed
-    except json.JSONDecodeError as e:
-        if debug_mode:
-            st.error(f"JSON parsing error: {str(e)}")
-        return None
-    except Exception as e:
-        if debug_mode:
-            st.error(f"Unexpected error: {str(e)}")
-        return None
-
-def generate_section_with_retries(prompt_msg, section_num, total_sections, previous_sections="", words_so_far=0, target_words=1000, debug_mode=False, max_attempts=50):
-    """Generate a single section with multiple retry attempts."""
-    last_response = None
-    
-    # Double the target words internally
-    internal_target = target_words * 2
-    words_per_section = internal_target // total_sections
-    
-    # Allow 50% less or more than the doubled target
-    min_acceptable_words = int(words_per_section * 0.5)  # 50% of target
-    max_acceptable_words = int(words_per_section * 2.0)  # 150% of target
-    
-    # Create a progress placeholder
-    progress_text = st.empty()
-    
-    for attempt in range(max_attempts):
-        progress_text.write(f"Section {section_num}: Attempt {attempt + 1}/{max_attempts}")
-        
-        if debug_mode:
-            st.write(f"Target words: {words_per_section}, Acceptable range: {min_acceptable_words}-{max_acceptable_words}")
-        
-        section_data = generate_section(
-            prompt_msg=prompt_msg,
-            section_num=section_num,
-            total_sections=total_sections,
-            previous_sections=previous_sections,
-            words_so_far=words_so_far,
-            target_words=internal_target,
-            debug_mode=debug_mode
-        )
-        
-        # Store the last valid response
-        if section_data and isinstance(section_data, dict) and "section_content" in section_data:
-            last_response = section_data
-            current_words = section_data["word_count"]
-            
-            if debug_mode:
-                st.write(f"Generated {current_words} words")
-            
-            # If we have enough words within the acceptable range, return this response
-            if min_acceptable_words <= current_words <= max_acceptable_words:
-                if debug_mode:
-                    st.success(f"Section {section_num} generated successfully with {current_words} words on attempt {attempt + 1}")
-                return section_data
-            elif debug_mode:
-                if current_words < min_acceptable_words:
-                    st.warning(f"Word count too low: {current_words} < {min_acceptable_words}, retrying...")
-                else:
-                    st.warning(f"Word count too high: {current_words} > {max_acceptable_words}, retrying...")
-            
-            # Overwrite prompt with word count instruction
-            base_prompt = prompt_msg
-            if current_words < min_acceptable_words:
-                additional_words_needed = min_acceptable_words - current_words
-                prompt_msg = f"{base_prompt}\n\nIMPORTANT: Your section must be between {min_acceptable_words} and {max_acceptable_words} words. Your previous response was {current_words} words. Add approximately {additional_words_needed} more words."
-            else:
-                words_to_reduce = current_words - max_acceptable_words
-                prompt_msg = f"{base_prompt}\n\nIMPORTANT: Your section must be between {min_acceptable_words} and {max_acceptable_words} words. Your previous response was {current_words} words. Reduce the content by approximately {words_to_reduce} words."
-    
-    if debug_mode:
-        st.error(f"All {max_attempts} attempts failed to meet word count requirements for section {section_num}")
-        if last_response:
-            st.write(f"Using best attempt with {last_response.get('word_count', 0)} words")
-    
-    return last_response or {
-        "section_content": f"## Section {section_num}\nFailed to generate content after {max_attempts} attempts.",
-        "section_title": f"Section {section_num}",
-        "word_count": 0
-    }
-
-
 if st.session_state["project_id"]:
     with st.expander("4) Generate & Refine Article (LLM)"):
-
-        # Additional user inputs for how to structure the article
         desired_article_length = st.number_input(
             "Desired total word count for the article",
             min_value=200,
@@ -1311,19 +987,14 @@ if st.session_state["project_id"]:
             value=5,
             step=1
         )
-
-        # If there's NO article selected, let user give a custom new article name
         new_article_name = ""
         if not st.session_state["article_id"]:
             new_article_name = st.text_input("New Article Name (optional)", value="")
-
         if st.button("Generate Article from Brief"):
             brief_text = st.session_state.get("article_brief", "")
             db_kws = db.get_project_keywords(st.session_state["project_id"])
             keywords = [k["keyword"] for k in db_kws] if db_kws else []
             kw_str = ", ".join(keywords) if keywords else "(none)"
-
-            # Get project details
             pinfo = db.get_project(st.session_state["project_id"])
             project_notes = {}
             if pinfo:
@@ -1332,7 +1003,6 @@ if st.session_state["project_id"]:
                     project_notes = json.loads(pinfo_dict.get("notes", "{}"))
                 except:
                     project_notes = {}
-
                 journey_stage = pinfo_dict.get("journey_stage", "")
                 category = pinfo_dict.get("category", "")
                 care_areas_list = json.loads(pinfo_dict.get("care_areas", "[]"))
@@ -1340,11 +1010,11 @@ if st.session_state["project_id"]:
                 business_cat = pinfo_dict.get("business_category", "")
                 consumer_need = project_notes.get("consumer_need", "")
                 tone_of_voice = project_notes.get("tone_of_voice", "")
-                target_audience = project_notes.get("target_audience", "")
+                target_audience = project_notes.get("target_audience", [])
                 freeform_notes = project_notes.get("freeform_notes", "")
                 topic_in_notes = project_notes.get("topic", "").strip()
-
-            # Build the base context prompt
+            # COMMUNITY DETAILS are no longer included at article-generation time.
+            community_details_text = ""
             context_msg = f"""
 MAIN TOPIC: {topic_in_notes}
 
@@ -1362,87 +1032,89 @@ PROJECT SPECIFICATIONS:
 5. Business Category: {business_cat}
 6. Consumer Need: {consumer_need}
 7. Tone of Voice: {tone_of_voice}
-8. Target Audience: {target_audience}
+8. Target Audience: {', '.join(target_audience)}
 
 ADDITIONAL CONTEXT:
 {freeform_notes}
 
-CONTENT REQUIREMENTS:
-- Total Word Count Target: {desired_article_length * 2}  # Doubled for internal target
-- Number of Sections: {number_of_sections}
-- Must stay focused on the main topic
+{community_details_text}
 """
+            full_article_prompt = f"""
+You are writing a highly focused article based on the following requirements:
 
-            full_article = ""
-            total_words = 0
-            section_titles = []
+{context_msg}
 
-            for section_num in range(1, number_of_sections + 1):
-                with st.spinner(f"Generating section {section_num} of {number_of_sections}..."):
-                    section_data = generate_section_with_retries(
-                        prompt_msg=context_msg,
-                        section_num=section_num,
-                        total_sections=number_of_sections,
-                        previous_sections=full_article,
-                        words_so_far=total_words,
-                        target_words=desired_article_length,
-                        debug_mode=debug_mode,
-                        max_attempts=50
-                    )
+CONTENT REQUIREMENTS:
+- The article must be strictly AT LEAST: {desired_article_length} words.
+- Number of Sections: {number_of_sections}.
+- Each section should start with "## " followed by an appropriate section title.
 
-                    if section_data:
-                        if isinstance(section_data, dict) and "section_content" in section_data:
-                            full_article += "\n\n" + section_data["section_content"]
-                            total_words += section_data.get("word_count", 0)
-                            section_titles.append(section_data.get("section_title", f"Section {section_num}"))
-                            
-                            st.write(f"✓ Section {section_num}: {section_data.get('section_title')} ({section_data.get('word_count', 0)} words)")
-                        else:
-                            st.warning(f"Section {section_num} generated with incomplete data")
-                            full_article += f"\n\n## Section {section_num}\n{str(section_data)}"
-                    else:
-                        st.error(f"Failed to generate section {section_num}")
-                        break
-
-            meta_title = ""
-            meta_desc = ""
-            if full_article.strip():
-                meta_prompt = f"""
-Article sections:
-{' -> '.join(section_titles)}
-
-Total words so far: {total_words}.
+Ensure that the article flows naturally, stays focused on the main topic, and adheres to the project specifications.
 
 Return ONLY a JSON object with exactly this structure and nothing else:
 {{
+    "article_content": "The complete article content with section markers and numerical markers",
+    "section_titles": ["Section Title 1", "Section Title 2", ..., "Section Title {number_of_sections}"],
     "meta_title": "A short SEO-friendly title (50-60 characters)",
     "meta_description": "A meta description around 150-160 characters"
 }}
 """
-                if debug_mode:
-                    st.write("### Debug: Meta Information Prompt")
-                    st.code(meta_prompt, language="text")
-
-                meta_response = query_llm_api(meta_prompt)
-
-                if debug_mode:
-                    st.write("### Debug: Meta Information Response")
-                    st.code(meta_response, language="text")
-
+            # Loop up to 5 iterations to ensure the word count is met
+            max_iterations = 5
+            iteration = 1
+            final_response = None
+            while iteration <= max_iterations:
+                with st.spinner(f"Generating full article (Iteration {iteration}/{max_iterations})..."):
+                    response, token_usage = query_llm_api(full_article_prompt)
                 try:
-                    start_idx = meta_response.find('{')
-                    end_idx = meta_response.rfind('}')
+                    start_idx = response.find('{')
+                    end_idx = response.rfind('}')
                     if start_idx == -1 or end_idx == -1:
-                        meta_data = {}
+                        raise json.JSONDecodeError("No valid JSON found", response, 0)
+                    json_str = response[start_idx:end_idx+1]
+                    full_response = json.loads(json_str)
+                    full_article = full_response.get("article_content", "")
+                    meta_title = full_response.get("meta_title", "")
+                    meta_desc = full_response.get("meta_description", "")
+                    section_titles = full_response.get("section_titles", [])
+                    word_count = len(full_article.split())
+                    if word_count >= desired_article_length:
+                        final_response = full_response
+                        break
                     else:
-                        json_str = meta_response[start_idx:end_idx + 1]
-                        meta_data = json.loads(json_str)
-                    meta_title = meta_data.get("meta_title", "")
-                    meta_desc = meta_data.get("meta_description", "")
-                except:
-                    meta_title = ""
-                    meta_desc = ""
+                        additional_needed = desired_article_length - word_count
+                        st.info(f"Article only has {word_count} words. {additional_needed} more words needed. Retrying iteration {iteration + 1}...")
+                        full_article_prompt = f"""
+Your previous article content is below:
+{full_article}
 
+It currently has {word_count} words, which is less than the required {desired_article_length} words.
+Please expand the article by adding approximately {additional_needed} more words, while preserving the structure and quality.
+Return ONLY a JSON object with exactly the same structure as before:
+{{
+    "article_content": "The complete article content with section markers and numerical markers",
+    "section_titles": ["Section Title 1", "Section Title 2", ..., "Section Title {number_of_sections}"],
+    "meta_title": "A short SEO-friendly title (50-60 characters)",
+    "meta_description": "A meta description around 150-160 characters"
+}}
+"""
+                        iteration += 1
+                except Exception as e:
+                    st.error("Failed to parse article JSON: " + str(e))
+                    final_response = {"article_content": response, "meta_title": "", "meta_description": "", "section_titles": []}
+                    break
+            if final_response is not None:
+                full_article = final_response.get("article_content", "")
+                meta_title = final_response.get("meta_title", "")
+                meta_desc = final_response.get("meta_description", "")
+                section_titles = final_response.get("section_titles", [])
+                total_words = len(full_article.split())
+            else:
+                full_article = response
+                meta_title = ""
+                meta_desc = ""
+                section_titles = []
+                total_words = len(full_article.split())
             if not st.session_state["article_id"]:
                 final_title = new_article_name.strip() if new_article_name.strip() else "(Generated Draft)"
                 new_art_id = db.save_article_content(
@@ -1454,45 +1126,47 @@ Return ONLY a JSON object with exactly this structure and nothing else:
                     meta_description=meta_desc,
                 )
                 st.session_state["article_id"] = new_art_id
-
-            current_aid = st.session_state["article_id"]
-            set_current_draft(current_aid, full_article or "")
-            set_meta_title(current_aid, meta_title or "")
-            set_meta_desc(current_aid, meta_desc or "")
-
+            else:
+                new_art_id = st.session_state["article_id"]
+            if "drafts_by_article" not in st.session_state:
+                st.session_state["drafts_by_article"] = {}
+            st.session_state["drafts_by_article"][new_art_id] = full_article
+            if "meta_title_by_article" not in st.session_state:
+                st.session_state["meta_title_by_article"] = {}
+            st.session_state["meta_title_by_article"][new_art_id] = meta_title
+            if "meta_desc_by_article" not in st.session_state:
+                st.session_state["meta_desc_by_article"] = {}
+            st.session_state["meta_desc_by_article"][new_art_id] = meta_desc
             if full_article.strip():
-                st.success("Article (with numeric markers) + meta fields have been set in the UI!")
+                st.success(f"Article generated with {total_words} words and meta fields set in the UI!")
             else:
                 st.warning("No complete article content generated. Check errors above.")
-
         article_id = st.session_state["article_id"]
         if not article_id:
             st.info("No article selected/created yet. Generate an article first or create one above.")
         else:
-            current_draft_text = get_current_draft(article_id)
+            current_draft_text = st.session_state["drafts_by_article"].get(article_id, "")
             st.write("### Current Article Draft (with numeric markers)")
             new_draft = st.text_area(
                 "Current Article Draft",
-                value=clean_article_text(current_draft_text, debug_mode=debug_mode),
+                value=full_article if full_article.strip() else current_draft_text,
                 height=300
             )
             if new_draft != current_draft_text:
-                set_current_draft(article_id, new_draft)
-
-            current_refine_instructions = get_refine_instructions(article_id)
+                st.session_state["drafts_by_article"][article_id] = new_draft
+            current_refine_instructions = st.session_state.get("refine_instructions_by_article", {}).get(article_id, "")
             st.write("---")
             st.write("**Optionally** refine the article with additional instructions below.")
             refine_instructions_text = st.text_area("Refine Instructions", value=current_refine_instructions)
-
-            if refine_instructions_text != current_refine_instructions:
-                set_refine_instructions(article_id, refine_instructions_text)
-
+            if "refine_instructions_by_article" not in st.session_state:
+                st.session_state["refine_instructions_by_article"] = {}
+            st.session_state["refine_instructions_by_article"][article_id] = refine_instructions_text
             if st.button("Refine Article"):
                 if refine_instructions_text.strip():
                     refine_prompt = f"""
 Current article:
 
-{get_current_draft(article_id)}
+{st.session_state["drafts_by_article"].get(article_id, "")}
 
 IMPORTANT: Return only the final text (article) with your modifications applied.
 Retain the numeric word markers after each word or (keyword) for keywords.
@@ -1501,21 +1175,23 @@ Refine the article according to these instructions:
 {refine_instructions_text}
 """
                     with st.spinner("Refining..."):
-                        refined = query_llm_api(refine_prompt)
-                    set_current_draft(article_id, refined)
+                        refined, token_usage = query_llm_api(refine_prompt)
+                    st.write(f"Token usage: {token_usage}")
+                    st.session_state["drafts_by_article"][article_id] = refined
                     st.success("Refined successfully!")
                 else:
                     st.warning("Please enter some instructions to refine the article.")
 
-
+# --------------------------------------------------------------------
 # 5) Save/Update Final Article
+# --------------------------------------------------------------------
 if st.session_state["project_id"]:
     with st.expander("5) Save/Update Final Article"):
         article_id = st.session_state["article_id"]
         if not article_id:
             st.info("No article selected. Generate or select one first.")
         else:
-            draft_text = get_current_draft(article_id)
+            draft_text = st.session_state["drafts_by_article"].get(article_id, "")
             article_db_row = db.get_article_content(article_id)
             existing_title = ""
             existing_meta_title = ""
@@ -1524,17 +1200,13 @@ if st.session_state["project_id"]:
                 existing_title = article_db_row["article_title"] or ""
                 existing_meta_title = article_db_row["meta_title"] or ""
                 existing_meta_desc = article_db_row["meta_description"] or ""
-
             st.write("### Article Title")
             updated_article_title = st.text_input("Give your article a clear title", value=existing_title)
-
-            default_meta_title = get_meta_title(article_id) or existing_meta_title
-            default_meta_desc = get_meta_desc(article_id) or existing_meta_desc
-
+            default_meta_title = st.session_state.get("meta_title_by_article", {}).get(article_id, "") or existing_meta_title
+            default_meta_desc = st.session_state.get("meta_desc_by_article", {}).get(article_id, "") or existing_meta_desc
             final_text = st.text_area("Final Article", draft_text, height=300)
             meta_title = st.text_input("Meta Title", value=default_meta_title)
             meta_desc = st.text_area("Meta Description", value=default_meta_desc, height=68)
-
             if st.button("Save Article to DB"):
                 saved_id = db.save_article_content(
                     project_id=st.session_state["project_id"],
@@ -1545,16 +1217,19 @@ if st.session_state["project_id"]:
                     meta_description=meta_desc,
                     article_id=article_id
                 )
-
-                set_current_draft(saved_id, final_text)
-                set_meta_title(saved_id, meta_title)
-                set_meta_desc(saved_id, meta_desc)
-
+                st.session_state["drafts_by_article"][saved_id] = final_text
+                if "meta_title_by_article" not in st.session_state:
+                    st.session_state["meta_title_by_article"] = {}
+                st.session_state["meta_title_by_article"][saved_id] = meta_title
+                if "meta_desc_by_article" not in st.session_state:
+                    st.session_state["meta_desc_by_article"] = {}
+                st.session_state["meta_desc_by_article"][saved_id] = meta_desc
                 st.success("Article saved to DB!")
                 st.session_state["article_id"] = saved_id
 
-
+# --------------------------------------------------------------------
 # 6) View Saved Article
+# --------------------------------------------------------------------
 if st.session_state.get("project_id") and st.session_state.get("article_id"):
     with st.expander("6) View Saved Article"):
         article_row = db.get_article_content(st.session_state["article_id"])
@@ -1563,31 +1238,93 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
         else:
             st.write("### Article Title")
             st.write(article_row["article_title"])
-
             st.write("### Article Content")
-            st.write(clean_article_text(article_row["article_content"], debug_mode=debug_mode))
-
+            st.write(full_article if full_article.strip() else article_row["article_content"])
             if article_row["meta_title"] or article_row["meta_description"]:
                 st.write("---")
                 st.write("**Meta Title**:", article_row["meta_title"])
                 st.write("**Meta Description**:", article_row["meta_description"])
-
             if st.button("Delete Saved Article", key="delete_saved_article"):
                 db.delete_article_content(article_row["id"])
                 st.success("Article content deleted.")
                 st.session_state["article_id"] = None
-                st.experimental_rerun()
+                st.rerun()
 
+# --------------------------------------------------------------------
+# 7) Generate Community-Specific Revision
+# --------------------------------------------------------------------
+if st.session_state.get("project_id") and st.session_state.get("article_id"):
+    with st.expander("7) Generate Community-Specific Revision"):
+        article_row = db.get_article_content(st.session_state["article_id"])
+        if not article_row:
+            st.info("No saved article found. Please generate and save an article first.")
+        else:
+            original_article = article_row["article_content"]
+            # Get the list of communities from the Community Manager
+            communities = comm_manager.get_communities()
+            community_names = ["None"] + [f"{c['community_name']} (ID: {c['id']})" for c in communities]
+            selected_rev_comm = st.selectbox("Select Community for Revision", community_names, key="rev_comm")
+            if selected_rev_comm != "None":
+                rev_comm_id = int(selected_rev_comm.split("ID:")[-1].replace(")", "").strip())
+                community = comm_manager.get_community(rev_comm_id)
+                care_areas = comm_manager.get_care_areas(rev_comm_id)
+                care_areas_names = [ca["care_area"] for ca in care_areas] if care_areas else []
+                community_details_text = f"""
+COMMUNITY DETAILS:
+- Name: {community["community_name"]}
+- Primary Domain: {community["community_primary_domain"]}
+- Location: {community["city"]}, {community["state"]}, {community["address"]}, {community["zip_code"]}
+- About Page: {community["about_page"]}
+- Contact Page: {community["contact_page"]}
+- Floor Plan Page: {community["floor_plan_page"]}
+- Dining Page: {community["dining_page"]}
+- Gallery Page: {community["gallery_page"]}
+- Health & Wellness Page: {community["health_wellness_page"]}
+- Care Areas: {', '.join(care_areas_names) if care_areas_names else 'None'}
+"""
+                default_rev_instructions = f"Revise the article below to be specifically tailored for the community with the following details: {community_details_text}"
+                rev_instructions = st.text_area("Revision Instructions (optional)", value=default_rev_instructions, key="rev_instructions")
+                if st.button("Generate Community Revision"):
+                    revision_prompt = f"""
+Here is the current article:
+{original_article}
 
-# Debug info
+Please revise this article to be specifically tailored for the following community:
+{community_details_text}
+
+Ensure the revised article speaks directly to the community's audience and includes relevant details.
+
+Return only the revised article text.
+"""
+                    with st.spinner("Generating community-specific revision..."):
+                        revised_article_text, token_usage = query_llm_api(revision_prompt)
+                    st.write(f"Token usage: {token_usage}")
+                    new_rev_title = f"{article_row['article_title']} - Community Revision for {community['community_name']}"
+                    new_article_id = db.save_article_content(
+                        project_id = st.session_state["project_id"],
+                        article_title = new_rev_title,
+                        article_content = revised_article_text,
+                        article_schema = None,
+                        meta_title = article_row.get("meta_title", ""),
+                        meta_description = article_row.get("meta_description", "")
+                    )
+                    st.success(f"Community revision saved as new article (ID: {new_article_id}).")
+                    # Optionally, update the session to select the new article revision
+                    st.session_state["article_id"] = new_article_id
+            else:
+                st.info("Please select a community for revision.")
+
+# --------------------------------------------------------------------
+# Debug Info
+# --------------------------------------------------------------------
 if debug_mode:
     st.write("## Debug Info")
     st.json({"project_id": st.session_state.get("project_id")})
     st.json({"article_id": st.session_state.get("article_id")})
     st.json({"article_brief": st.session_state.get("article_brief", "")})
-    st.json({"drafts_by_article": st.session_state["drafts_by_article"]})
-    st.json({"refine_instructions_by_article": st.session_state["refine_instructions_by_article"]})
-    st.json({"meta_title_by_article": st.session_state["meta_title_by_article"]})
-    st.json({"meta_desc_by_article": st.session_state["meta_desc_by_article"]})
+    st.json({"drafts_by_article": st.session_state.get("drafts_by_article", {})})
+    st.json({"refine_instructions_by_article": st.session_state.get("refine_instructions_by_article", {})})
+    st.json({"meta_title_by_article": st.session_state.get("meta_title_by_article", {})})
+    st.json({"meta_desc_by_article": st.session_state.get("meta_desc_by_article", {})})
     all_projects_debug = [dict(p) for p in projects]
     st.write("All Projects:", all_projects_debug)
