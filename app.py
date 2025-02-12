@@ -1409,13 +1409,16 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
             if selected_rev_comm != "None":
                 rev_comm_id = int(selected_rev_comm.split("ID:")[-1].replace(")", "").strip())
                 community = comm_manager.get_community(rev_comm_id)
-                # Retrieve aliases and detailed care area info
-                aliases = comm_manager.get_aliases(rev_comm_id)
-                alias_list = [alias["alias"] for alias in aliases] if aliases else []
-                aliases_text = ", ".join(alias_list) if alias_list else "None"
-                care_area_details_text = get_care_area_details(comm_manager, rev_comm_id)
                 
-                community_details_text = f"""
+                # Add a button to trigger the revision
+                if st.button("Generate Community Revision", key=f"gen_rev_{rev_comm_id}"):
+                    # Retrieve aliases and detailed care area info
+                    aliases = comm_manager.get_aliases(rev_comm_id)
+                    alias_list = [alias["alias"] for alias in aliases] if aliases else []
+                    aliases_text = ", ".join(alias_list) if alias_list else "None"
+                    care_area_details_text = get_care_area_details(comm_manager, rev_comm_id)
+                    
+                    community_details_text = f"""
 COMMUNITY DETAILS:
 - Name: {community["community_name"]}
 - Primary Domain: {community["community_primary_domain"]}
@@ -1425,7 +1428,7 @@ COMMUNITY DETAILS:
 Detailed Care Areas:
 {care_area_details_text}
 """
-                revision_prompt = f"""
+                    revision_prompt = f"""
 ORIGINAL ARTICLE CONTEXT:
 - Article Type: {article_row['article_title']}
 - Project Details: {json.loads(db.get_project(st.session_state["project_id"])['notes'])}
@@ -1460,36 +1463,35 @@ FORMATTING INSTRUCTIONS:
 
 Return only the revised article text with all formatting preserved.
 """
-                with st.spinner("Generating community-specific revision..."):
-                    revised_article_text, token_usage, raw_response = query_llm_api(revision_prompt)
-                    # Calculate costs from token usage
-                    costs = calculate_token_costs(token_usage)
-                    st.write(f"""
+                    with st.spinner("Generating community-specific revision..."):
+                        revised_article_text, token_usage, raw_response = query_llm_api(revision_prompt)
+                        # Calculate costs from token usage
+                        costs = calculate_token_costs(token_usage)
+                        st.write(f"""
 **Token Usage & Costs:**
 - Input: {costs['prompt_tokens']:,} tokens (${costs['input_cost']:.4f})
 - Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
 - Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
 """)
-                    if debug_mode:
-                        st.write("**Raw API Response:**")
-                        st.code(raw_response, language="json")
+                        if debug_mode:
+                            st.write("**Raw API Response:**")
+                            st.code(raw_response, language="json")
+                            
+                        new_rev_title = f"{article_row['article_title']} - Community Revision for {community['community_name']}"
+                        article_dict = dict(article_row)
+                        new_article_id = db.save_article_content(
+                            project_id=st.session_state["project_id"],
+                            article_title=new_rev_title,
+                            article_content=revised_article_text,
+                            article_schema=None,
+                            meta_title=article_dict.get("meta_title", ""),
+                            meta_description=article_dict.get("meta_description", "")
+                        )
                         
-                    new_rev_title = f"{article_row['article_title']} - Community Revision for {community['community_name']}"
-                    # Convert SQLite Row to dict to use get() method
-                    article_dict = dict(article_row)
-                    new_article_id = db.save_article_content(
-                        project_id=st.session_state["project_id"],
-                        article_title=new_rev_title,
-                        article_content=revised_article_text,
-                        article_schema=None,
-                        meta_title=article_dict.get("meta_title", ""),
-                        meta_description=article_dict.get("meta_description", "")
-                    )
-                    
-                    # Update session state with new article while maintaining project
-                    st.session_state["article_id"] = new_article_id
-                    st.success(f"Community revision saved as new article (ID: {new_article_id}).")
-                    st.rerun()
+                        # Update session state with new article while maintaining project
+                        st.session_state["article_id"] = new_article_id
+                        st.success(f"Community revision saved as new article (ID: {new_article_id}).")
+                        st.rerun()
             else:
                 st.info("Please select a community for revision.")
 
