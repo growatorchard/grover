@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import re
 from dotenv import load_dotenv
+import pyperclip
 
 load_dotenv()  # This loads environment variables from .env
 
@@ -37,25 +38,83 @@ def calculate_token_costs(token_usage):
     }
 
 def clean_json_response(response: str) -> str:
-    """Clean and extract JSON from various response formats"""
+    """Clean and extract article content from various JSON response formats"""
     # Remove any triple quotes and markdown formatting
     response = response.replace('```json', '').replace('```', '')
     
-    # Find the first { and last } for proper JSON extraction
-    start_idx = response.find('{')
-    end_idx = response.rfind('}')
-    
-    if start_idx == -1 or end_idx == -1:
-        raise ValueError("No JSON object found in response")
+    # Check if response starts with a markdown header or plain text
+    if response.strip().startswith('##') or not response.strip().startswith('{'):
+        return response
         
-    # Extract the JSON part
-    json_str = response[start_idx:end_idx + 1]
-    
-    # Remove any leading/trailing whitespace
-    json_str = json_str.strip()
-    
-    return json_str
+    try:
+        # First attempt: Try to parse the entire response as JSON
+        data = json.loads(response)
+        
+        # Handle different JSON structures we might receive
+        if isinstance(data, dict):
+            # Case 1: Direct article content
+            if "article" in data:
+                return data["article"]
+            # Case 2: Nested content in assistant message
+            elif "content" in data:
+                # Check if content is a string or another JSON object
+                if isinstance(data["content"], str):
+                    return data["content"]
+                # If content is another JSON object, try to parse it
+                try:
+                    nested_content = json.loads(data["content"])
+                    if isinstance(nested_content, dict):
+                        if "article" in nested_content:
+                            return nested_content["article"]
+                        elif "content" in nested_content:
+                            return nested_content["content"]
+                except:
+                    return data["content"]
+            # Case 3: Nested in role/content structure
+            elif "role" in data and "content" in data:
+                return data["content"]
+            # Case 4: Article content with metadata
+            elif "article_content" in data:
+                return data["article_content"]
+            # Case 5: Full article structure
+            elif all(key in data for key in ["article_content", "section_titles", "meta_title", "meta_description"]):
+                return data["article_content"]
+            
+        return response
+        
+    except json.JSONDecodeError:
+        # If JSON parsing fails and content looks like clean text, return it
+        if not response.strip().startswith('{'):
+            return response
+            
+        # Otherwise try to extract JSON manually
+        start_idx = response.find('{')
+        end_idx = response.rfind('}')
+        
+        if start_idx == -1 or end_idx == -1:
+            return response
+            
+        # Extract the JSON part and try parsing again
+        json_str = response[start_idx:end_idx + 1].strip()
+        try:
+            data = json.loads(json_str)
+            return clean_json_response(json.dumps(data))  # Recursively try to clean the extracted JSON
+        except:
+            return response
 
+def extract_article_content(response_text):
+    try:
+        # Clean and parse JSON response
+        json_str = clean_json_response(response_text)
+        response_data = json.loads(json_str)
+        
+        # Extract article content
+        if isinstance(response_data, dict) and "article" in response_data:
+            return response_data["article"]
+        return response_text
+    except:
+        # If JSON parsing fails, return original text
+        return response_text
 
 # --------------------------------------------------------------------
 # 1) Database Manager (SQLite) for Grover Projects
@@ -519,110 +578,7 @@ def format_keyword_report(keyword_data):
 # --------------------------------------------------------------------
 # 4) LLM Query Functions
 # --------------------------------------------------------------------
-def query_claude_api(message: str, conversation_history: list = None) -> tuple[str, dict, str]:
-    """
-    Calls Anthropic's /v1/messages endpoint with conversation history support.
-    Returns: (processed_response, token_usage, raw_response)
-    """
-    url = 'https://api.anthropic.com/v1/messages'
-    try:
-        api_key = st.secrets['ANTHROPIC_API_KEY']
-    except:
-        return "Error: No ANTHROPIC_API_KEY found in st.secrets.", {}, ""
-    
-    headers = {
-        'anthropic-version': '2023-06-01',
-        'x-api-key': api_key,
-        'content-type': 'application/json',
-    }
-    
-    messages = []
-    if conversation_history:
-        messages.extend(conversation_history)
-    messages.append({
-        'role': 'user',
-        'content': message
-    })
-    
-    payload = {
-        'model': 'claude-3-5-sonnet-20241022',
-        'max_tokens': 5000,
-        'messages': messages
-    }
-    
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=240)
-        response.raise_for_status()
-        response_data = response.json()
-        raw_response = json.dumps(response_data, indent=2)
-        
-        if 'content' in response_data:
-            content = response_data['content']
-            if isinstance(content, list):
-                text = ''.join(block.get('text', '') for block in content)
-            else:
-                text = str(content)
-            
-            if conversation_history is not None:
-                conversation_history.append({
-                    'role': 'assistant',
-                    'content': text
-                })
-            return text, response_data.get('usage', {}), raw_response
-        return "Could not extract content from Anthropic response.", {}, raw_response
-    except requests.exceptions.RequestException as e:
-        error_message = f"API request failed: {str(e)}"
-        if hasattr(e, 'response') and e.response is not None:
-            error_message += f"\nResponse: {e.response.text}"
-        return error_message, {}, str(e)
 
-def query_groq_api(message: str, conversation_history: list = None) -> str:
-    """
-    Calls Groq's API endpoint with conversation history support.
-    Requires st.secrets['GROQ_API_KEY'] to be set.
-    """
-    url = 'https://api.groq.com/openai/v1/chat/completions'
-    try:
-        api_key = st.secrets['GROQ_API_KEY']
-    except:
-        return "Error: No GROQ_API_KEY found in st.secrets."
-    headers = {
-        'Authorization': f'Bearer {api_key}',
-        'Content-Type': 'application/json'
-    }
-    # Build messages array from conversation history
-    messages = []
-    if conversation_history:
-        messages.extend(conversation_history)
-    messages.append({
-        'role': 'user',
-        'content': message
-    })
-    payload = {
-        'model': 'llama-70b-v2',
-        'messages': messages,
-        'temperature': 0.7,
-        'max_tokens': 4096
-    }
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=240)
-        response.raise_for_status()
-        response_data = response.json()
-        if 'choices' in response_data and len(response_data['choices']) > 0:
-            content = response_data['choices'][0]['message']['content']
-            # Add the response to conversation history if provided
-            if conversation_history is not None:
-                conversation_history.append({
-                    'role': 'assistant',
-                    'content': content
-                })
-            return content
-        return "Could not extract content from Groq response."
-    except requests.exceptions.RequestException as e:
-        error_message = f"API request failed: {str(e)}"
-        if hasattr(e, 'response') and e.response is not None:
-            error_message += f"\nResponse: {e.response.text}"
-        return error_message
 
 def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[str, dict, str]:
     """
@@ -686,12 +642,8 @@ def query_llm_api(message: str, conversation_history: list = None) -> tuple[str,
     Dispatches the API call to the selected LLM based on the sidebar model selection.
     Returns: (processed_response, token_usage, raw_response)
     """
-    model = st.session_state.get('selected_model', 'Claude')
-    if model == "Claude":
-        return query_claude_api(message, conversation_history)
-    elif model == "Groq (Llama-70B)":
-        return query_groq_api(message, conversation_history)
-    elif model == "ChatGPT (o1)":
+    model = st.session_state.get('selected_model', 'ChatGPT (o1)')
+    if model == "ChatGPT (o1)":
         return query_chatgpt_api(message, conversation_history)
     else:
         return "Selected model not supported.", {}, ""
@@ -753,9 +705,7 @@ if "token_usage_history" not in st.session_state:
 # --------------------------------------------------------------------
 debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
 model_options = {
-    "Claude": "claude-3-5-sonnet-20241022",
-    "Groq (Llama-70B)": "llama-70b-v2",
-    "ChatGPT (o1)": "gpt-3.5-turbo"
+    "ChatGPT (o1)": "o1-mini"
 }
 st.session_state['selected_model'] = st.sidebar.selectbox("Select Model", list(model_options.keys()))
 
@@ -1152,8 +1102,6 @@ Return ONLY a JSON object with this structure:
 {{
     "article_content": "The complete article with section markers",
     "section_titles": ["Title 1", "Title 2", ...],
-    "meta_title": "SEO title (50-60 chars)",
-    "meta_description": "SEO description (150-160 chars)"
 }}
 """
             # Loop up to 5 iterations to ensure the word count is met
@@ -1184,33 +1132,20 @@ Return ONLY a JSON object with this structure:
                         st.code(raw_response, language="json")
                 try:
                     # Clean and parse the JSON response
-                    try:
-                        json_str = clean_json_response(response)
-                        full_response = json.loads(json_str)
-                    except ValueError as ve:
-                        st.error(f"Failed to extract JSON: {str(ve)}")
-                        # Try one more time with the raw response
-                        try:
-                            full_response = json.loads(response)
-                        except json.JSONDecodeError:
-                            st.error("Could not parse response as JSON. Retrying generation...")
-                            iteration = 1  # Reset iteration counter
-                            continue
-                    
-                    full_article = full_response.get("article_content", "")
-                    meta_title = full_response.get("meta_title", "")
-                    meta_desc = full_response.get("meta_description", "")
-                    section_titles = full_response.get("section_titles", [])
-                    word_count = len(full_article.split())
+                    article_text = clean_json_response(response)
+                    word_count = len(article_text.split())
                     
                     # Check for zero words case
                     if word_count == 0:
-                        st.warning("Generated article has zero words. Restarting generation process...")
+                        st.warning("Generated article appears to be empty. Retrying...")
                         iteration = 1  # Reset iteration counter
                         continue  # Restart from beginning
                         
                     if word_count >= desired_article_length:
-                        final_response = full_response
+                        final_response = {
+                            "article_content": article_text,
+                            "section_titles": []
+                        }
                         break
                     else:
                         additional_needed = desired_article_length - word_count
@@ -1221,7 +1156,7 @@ IMPORTANT: The previous article was {word_count} words, which is BELOW the requi
 Add approximately {additional_needed} more words to reach the minimum requirement while maintaining quality and relevance.
 
 Previous content:
-{full_article}
+{article_text}
 
 Return the complete expanded article in the same JSON format as before.
 """
@@ -1251,13 +1186,9 @@ Return ONLY a JSON object with this structure:
 {{
     "article_content": "The complete article with section markers",
     "section_titles": ["Title 1", "Title 2", ...],
-    "meta_title": "SEO title (50-60 chars)",
-    "meta_description": "SEO description (150-160 chars)"
 }}
 """
                         continue
-                    final_response = {"article_content": response, "meta_title": "", "meta_description": "", "section_titles": []}
-                    break
             if final_response is not None:
                 full_article = final_response.get("article_content", "")
                 meta_title = final_response.get("meta_title", "")
@@ -1309,38 +1240,30 @@ Return ONLY a JSON object with this structure:
             )
             if new_draft != current_draft_text:
                 st.session_state["drafts_by_article"][article_id] = new_draft
-            current_refine_instructions = st.session_state.get("refine_instructions_by_article", {}).get(article_id, "")
-            st.write("---")
-            st.write("**Optionally** refine the article with additional instructions below.")
-            refine_instructions_text = st.text_area("Refine Instructions", value=current_refine_instructions)
-            if "refine_instructions_by_article" not in st.session_state:
-                st.session_state["refine_instructions_by_article"] = {}
-            st.session_state["refine_instructions_by_article"][article_id] = refine_instructions_text
-            if st.button("Refine Article"):
-                if refine_instructions_text.strip():
-                    refine_prompt = f"""
-Current article:
 
-{st.session_state["drafts_by_article"].get(article_id, "")}
+            # Get current refine instructions from session state
+            refine_instructions = st.session_state.get("refine_instructions_by_article", {}).get(article_id, "")
 
-IMPORTANT: Return only the final text (article) with your modifications applied.
-Retain the numeric word markers after each word or (keyword) for keywords.
+            # Create text area for refine instructions
+            new_refine_instructions = st.text_area(
+                "Refine Instructions",
+                value=refine_instructions,
+                help="Enter instructions for refining the article"
+            )
 
-Refine the article according to these instructions:
-{refine_instructions_text}
-"""
-                    with st.spinner("Refining..."):
-                        refined, token_usage = query_llm_api(refine_prompt)
-                    st.write(f"""
-**Token Usage & Costs:**
-- Input: {token_usage['prompt_tokens']:,} tokens (${token_usage['input_cost']:.4f})
-- Output: {token_usage['completion_tokens']:,} tokens (${token_usage['output_cost']:.4f})
-- Total: {token_usage['total_tokens']:,} tokens (${token_usage['total_cost']:.4f})
-""")
-                    st.session_state["drafts_by_article"][article_id] = refined
-                    st.success("Refined successfully!")
-                else:
-                    st.warning("Please enter some instructions to refine the article.")
+            # Update session state if instructions changed
+            if new_refine_instructions != refine_instructions:
+                if "refine_instructions_by_article" not in st.session_state:
+                    st.session_state["refine_instructions_by_article"] = {}
+                st.session_state["refine_instructions_by_article"][article_id] = new_refine_instructions
+
+            # Only proceed with refinement if there are instructions
+            if new_refine_instructions:
+                if st.button("Refine Article"):
+                    with st.spinner("Refining article..."):
+                        refined_text, token_usage, raw_response = query_llm_api(
+                            f"Refine the article according to these instructions: {new_refine_instructions}"
+                        )
 
 # --------------------------------------------------------------------
 # 5) Save/Update Final Article
@@ -1394,16 +1317,18 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
     with st.expander("6) View Saved Article"):
         article_row = db.get_article_content(st.session_state["article_id"])
         if not article_row:
-            st.info("No article has been saved yet for this selection.")
+            st.info("No saved article found. Please generate and save an article first.")
         else:
-            st.write("### Article Title")
-            st.write(article_row["article_title"])
-            st.write("### Article Content")
-            st.write(article_row["article_content"])
-            if article_row["meta_title"] or article_row["meta_description"]:
-                st.write("---")
-                st.write("**Meta Title**:", article_row["meta_title"])
-                st.write("**Meta Description**:", article_row["meta_description"])
+            st.write(f"**Title**: {article_row['article_title']}")
+            st.write(f"**Meta Title**: {article_row['meta_title']}")
+            st.write(f"**Meta Description**: {article_row['meta_description']}")
+            st.markdown("**Article Content**:")
+            st.markdown(article_row['article_content'])
+            
+            # Add Copy Raw button with pyperclip
+            if st.button("Copy Raw Markdown"):
+                pyperclip.copy(article_row['article_content'])
+                st.toast("Article content copied to clipboard!")
             if st.button("Delete Saved Article", key="delete_saved_article"):
                 db.delete_article_content(article_row["id"])
                 st.success("Article content deleted.")
@@ -1495,66 +1420,76 @@ COMMUNITY DETAILS:
 - Name: {community["community_name"]}
 - Primary Domain: {community["community_primary_domain"]}
 - Location: {community["city"]}, {community["state"]}, {community["address"]}, {community["zip_code"]}
-- About Page: {community["about_page"]}
-- Contact Page: {community["contact_page"]}
-- Floor Plan Page: {community["floor_plan_page"]}
-- Dining Page: {community["dining_page"]}
-- Gallery Page: {community["gallery_page"]}
-- Health & Wellness Page: {community["health_wellness_page"]}
 - Aliases: {aliases_text}
 
 Detailed Care Areas:
 {care_area_details_text}
 """
-                default_rev_instructions = f"Revise the article below to be specifically tailored for the community with the following details: {community_details_text}"
-                rev_instructions = st.text_area(
-                    "Revision Instructions (optional)", 
-                    value=default_rev_instructions, 
-                    key=f"rev_instructions_{st.session_state['article_id']}"
-                )
-                
-                if st.button("Generate Community Revision", key=f"gen_rev_{st.session_state['article_id']}"):
-                    revision_prompt = f"""
-Here is the current article:
+                revision_prompt = f"""
+ORIGINAL ARTICLE CONTEXT:
+- Article Type: {article_row['article_title']}
+- Project Details: {json.loads(db.get_project(st.session_state["project_id"])['notes'])}
+
+ORIGINAL ARTICLE:
 {original_article}
 
-Please revise this article to be specifically tailored for the following community:
+COMMUNITY CUSTOMIZATION REQUEST:
+Please update this article to be specifically tailored for the following senior living community while maintaining the original article's core message and structure.
+
+COMMUNITY DETAILS:
 {community_details_text}
 
-Ensure the revised article speaks directly to the community's audience and includes relevant details.
+REVISION REQUIREMENTS:
+1. Incorporate community-specific details naturally throughout the article
+2. Include relevant internal links to optimize keyword SEO; include each link a maximum of once in the article.
+   - About Page: {community["about_page"]}
+   - Contact Page: {community["contact_page"]}
+   - Floor Plan Page: {community["floor_plan_page"]}
+   - Dining Page: {community["dining_page"]}
+   - Gallery Page: {community["gallery_page"]}
+   - Health & Wellness Page: {community["health_wellness_page"]}
 
-Return only the revised article text.
+3. Reference specific care areas, amenities, and services available at this community
+4. Maintain the original article's SEO focus and keyword strategy
+5. Keep the same general structure but with community-specific examples and details
+
+FORMATTING INSTRUCTIONS:
+- Preserve any existing headers (## format)
+- Include internal links using markdown format [text](url)
+- Maintain professional tone while speaking directly to the community's specific audience
+
+Return only the revised article text with all formatting preserved.
 """
-                    with st.spinner("Generating community-specific revision..."):
-                        revised_article_text, token_usage, raw_response = query_llm_api(revision_prompt)
-                        # Calculate costs from token usage
-                        costs = calculate_token_costs(token_usage)
-                        st.write(f"""
+                with st.spinner("Generating community-specific revision..."):
+                    revised_article_text, token_usage, raw_response = query_llm_api(revision_prompt)
+                    # Calculate costs from token usage
+                    costs = calculate_token_costs(token_usage)
+                    st.write(f"""
 **Token Usage & Costs:**
 - Input: {costs['prompt_tokens']:,} tokens (${costs['input_cost']:.4f})
 - Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
 - Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
 """)
-                        if debug_mode:
-                            st.write("**Raw API Response:**")
-                            st.code(raw_response, language="json")
+                    if debug_mode:
+                        st.write("**Raw API Response:**")
+                        st.code(raw_response, language="json")
                         
-                        new_rev_title = f"{article_row['article_title']} - Community Revision for {community['community_name']}"
-                        # Convert SQLite Row to dict to use get() method
-                        article_dict = dict(article_row)
-                        new_article_id = db.save_article_content(
-                            project_id=st.session_state["project_id"],
-                            article_title=new_rev_title,
-                            article_content=revised_article_text,
-                            article_schema=None,
-                            meta_title=article_dict.get("meta_title", ""),
-                            meta_description=article_dict.get("meta_description", "")
-                        )
-                        
-                        # Update session state with new article while maintaining project
-                        st.session_state["article_id"] = new_article_id
-                        st.success(f"Community revision saved as new article (ID: {new_article_id}).")
-                        st.rerun()
+                    new_rev_title = f"{article_row['article_title']} - Community Revision for {community['community_name']}"
+                    # Convert SQLite Row to dict to use get() method
+                    article_dict = dict(article_row)
+                    new_article_id = db.save_article_content(
+                        project_id=st.session_state["project_id"],
+                        article_title=new_rev_title,
+                        article_content=revised_article_text,
+                        article_schema=None,
+                        meta_title=article_dict.get("meta_title", ""),
+                        meta_description=article_dict.get("meta_description", "")
+                    )
+                    
+                    # Update session state with new article while maintaining project
+                    st.session_state["article_id"] = new_article_id
+                    st.success(f"Community revision saved as new article (ID: {new_article_id}).")
+                    st.rerun()
             else:
                 st.info("Please select a community for revision.")
 
