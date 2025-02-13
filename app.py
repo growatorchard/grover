@@ -18,49 +18,45 @@ def calculate_token_costs(token_usage):
     # Cost per million tokens (in USD)
     INPUT_COST_PER_MILLION = 1.10
     OUTPUT_COST_PER_MILLION = 4.40
-    
+
     # Extract token counts
-    prompt_tokens = token_usage.get('prompt_tokens', 0)
-    completion_tokens = token_usage.get('completion_tokens', 0)
-    
+    prompt_tokens = token_usage.get("prompt_tokens", 0)
+    completion_tokens = token_usage.get("completion_tokens", 0)
+
     # Calculate costs
     input_cost = (prompt_tokens / 1_000_000) * INPUT_COST_PER_MILLION
     output_cost = (completion_tokens / 1_000_000) * OUTPUT_COST_PER_MILLION
     total_cost = input_cost + output_cost
-    
+
     return {
-        'input_cost': input_cost,
-        'output_cost': output_cost,
-        'total_cost': total_cost,
-        'prompt_tokens': prompt_tokens,
-        'completion_tokens': completion_tokens,
-        'total_tokens': prompt_tokens + completion_tokens
+        "input_cost": input_cost,
+        "output_cost": output_cost,
+        "total_cost": total_cost,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
     }
 
 def clean_json_response(response: str) -> str:
-    """Clean and extract article content from various JSON response formats"""
+    """Clean and extract article content from various JSON response formats."""
     # Remove any triple quotes and markdown formatting
-    response = response.replace('```json', '').replace('```', '')
-    
+    response = response.replace("```json", "").replace("```", "")
+
     # Check if response starts with a markdown header or plain text
-    if response.strip().startswith('##') or not response.strip().startswith('{'):
+    if response.strip().startswith("##") or not response.strip().startswith("{"):
         return response
-        
+
     try:
         # First attempt: Try to parse the entire response as JSON
         data = json.loads(response)
-        
+
         # Handle different JSON structures we might receive
         if isinstance(data, dict):
-            # Case 1: Direct article content
             if "article" in data:
                 return data["article"]
-            # Case 2: Nested content in assistant message
             elif "content" in data:
-                # Check if content is a string or another JSON object
                 if isinstance(data["content"], str):
                     return data["content"]
-                # If content is another JSON object, try to parse it
                 try:
                     nested_content = json.loads(data["content"])
                     if isinstance(nested_content, dict):
@@ -68,53 +64,67 @@ def clean_json_response(response: str) -> str:
                             return nested_content["article"]
                         elif "content" in nested_content:
                             return nested_content["content"]
-                except:
+                except Exception:
                     return data["content"]
-            # Case 3: Nested in role/content structure
             elif "role" in data and "content" in data:
                 return data["content"]
-            # Case 4: Article content with metadata
             elif "article_content" in data:
                 return data["article_content"]
-            # Case 5: Full article structure
             elif all(key in data for key in ["article_content", "section_titles", "meta_title", "meta_description"]):
                 return data["article_content"]
-            
+
         return response
-        
+
     except json.JSONDecodeError:
-        # If JSON parsing fails and content looks like clean text, return it
-        if not response.strip().startswith('{'):
+        if not response.strip().startswith("{"):
             return response
-            
-        # Otherwise try to extract JSON manually
-        start_idx = response.find('{')
-        end_idx = response.rfind('}')
-        
+
+        start_idx = response.find("{")
+        end_idx = response.rfind("}")
+
         if start_idx == -1 or end_idx == -1:
             return response
-            
-        # Extract the JSON part and try parsing again
-        json_str = response[start_idx:end_idx + 1].strip()
+
+        json_str = response[start_idx : end_idx + 1].strip()
         try:
             data = json.loads(json_str)
-            return clean_json_response(json.dumps(data))  # Recursively try to clean the extracted JSON
-        except:
+            return clean_json_response(json.dumps(data))
+        except Exception:
             return response
 
 def extract_article_content(response_text):
     try:
-        # Clean and parse JSON response
         json_str = clean_json_response(response_text)
         response_data = json.loads(json_str)
-        
-        # Extract article content
         if isinstance(response_data, dict) and "article" in response_data:
             return response_data["article"]
         return response_text
-    except:
-        # If JSON parsing fails, return original text
+    except Exception:
         return response_text
+
+def generate_meta_content(article_content):
+    """Generate meta title and description for an article."""
+    prompt = f"""Given the following article content, generate an SEO-optimized meta title and meta description.
+    
+Requirements:
+- Meta title: 50-60 characters, compelling and keyword-rich
+- Meta description: 150-160 characters, engaging summary with call-to-action
+
+Article Content:
+{article_content}
+
+Return the response in JSON format:
+{{
+    "meta_title": "your generated title",
+    "meta_description": "your generated description"
+}}
+"""
+    response_text, token_usage, raw_response = query_llm_api(prompt)
+    try:
+        response_data = json.loads(clean_json_response(response_text))
+        return response_data.get("meta_title", ""), response_data.get("meta_description", "")
+    except Exception:
+        return "", ""
 
 # --------------------------------------------------------------------
 # 1) Database Manager (SQLite) for Grover Projects
@@ -181,11 +191,11 @@ class DatabaseManager:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             );
-        """
+            """
         )
         self.conn.commit()
 
-    # ------------- Projects -------------
+    # Projects
     def create_project(self, project_data):
         current_time = datetime.now().isoformat()
         self.cursor.execute(
@@ -204,7 +214,7 @@ class DatabaseManager:
                 created_at,
                 updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+            """,
             (
                 project_data["name"],
                 json.dumps(project_data["care_areas"]),
@@ -229,7 +239,7 @@ class DatabaseManager:
             SELECT id, name, created_at
             FROM projects
             ORDER BY created_at DESC
-        """
+            """
         )
         return self.cursor.fetchall()
 
@@ -238,7 +248,6 @@ class DatabaseManager:
         return self.cursor.fetchone()
 
     def update_project_state(self, project_id, state_data):
-        """Update basic fields in 'projects' table."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -253,7 +262,7 @@ class DatabaseManager:
                     notes = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """,
+                """,
                 (
                     state_data.get("name"),
                     json.dumps(state_data.get("care_areas", [])),
@@ -269,13 +278,12 @@ class DatabaseManager:
             return cursor.rowcount > 0
 
     def delete_project(self, project_id):
-        """Delete the project, which cascades to keywords and base_article_content."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
             return cursor.rowcount > 0
 
-    # ------------- Keywords -------------
+    # Keywords
     def add_keyword(self, project_id, keyword, search_volume, search_intent, keyword_difficulty):
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -284,7 +292,7 @@ class DatabaseManager:
                 INSERT INTO keywords
                 (project_id, keyword, search_volume, search_intent, keyword_difficulty)
                 VALUES (?, ?, ?, ?, ?)
-            """,
+                """,
                 (project_id, keyword, search_volume, search_intent, keyword_difficulty),
             )
             return cursor.lastrowid
@@ -301,7 +309,7 @@ class DatabaseManager:
             cursor.execute("DELETE FROM keywords WHERE id = ?", (keyword_id,))
             return cursor.rowcount > 0
 
-    # ------------- Articles -------------
+    # Articles
     def save_article_content(
         self,
         project_id,
@@ -312,15 +320,9 @@ class DatabaseManager:
         meta_description=None,
         article_id=None,
     ):
-        """
-        Insert or update an article. If article_id is given, update that record.
-        Otherwise, insert a new row.
-        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-
             if article_id:
-                # Update existing article
                 cursor.execute(
                     """
                     UPDATE base_article_content
@@ -336,7 +338,9 @@ class DatabaseManager:
                     (
                         article_title,
                         article_content,
-                        json.dumps(article_schema) if isinstance(article_schema, dict) else article_schema,
+                        json.dumps(article_schema)
+                        if isinstance(article_schema, dict)
+                        else article_schema,
                         meta_title,
                         meta_description,
                         article_id,
@@ -344,7 +348,6 @@ class DatabaseManager:
                 )
                 return article_id
             else:
-                # Create new article
                 cursor.execute(
                     """
                     INSERT INTO base_article_content (
@@ -353,12 +356,14 @@ class DatabaseManager:
                         created_at, updated_at
                     )
                     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """,
+                    """,
                     (
                         project_id,
                         article_title,
                         article_content,
-                        json.dumps(article_schema) if isinstance(article_schema, dict) else article_schema,
+                        json.dumps(article_schema)
+                        if isinstance(article_schema, dict)
+                        else article_schema,
                         meta_title,
                         meta_description,
                     ),
@@ -396,7 +401,6 @@ class DatabaseManager:
 # --------------------------------------------------------------------
 class CommunityManager:
     def __init__(self):
-        # Connect to the communities database file
         self.conn = sqlite3.connect("senior_living.db", check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
@@ -412,16 +416,15 @@ class CommunityManager:
     def get_care_areas(self, community_id):
         self.cursor.execute("SELECT * FROM care_areas WHERE community_id = ?", (community_id,))
         return self.cursor.fetchall()
-    
-    # New methods added to retrieve additional community-related info
+
     def get_aliases(self, community_id):
         self.cursor.execute("SELECT * FROM community_aliases WHERE community_id = ?", (community_id,))
         return self.cursor.fetchall()
-        
+
     def get_floor_plans(self, care_area_id):
         self.cursor.execute("SELECT * FROM floor_plans WHERE care_area_id = ?", (care_area_id,))
         return self.cursor.fetchall()
-        
+
     def get_saas(self, care_area_id):
         self.cursor.execute("SELECT * FROM services_activities_amenities WHERE care_area_id = ?", (care_area_id,))
         return self.cursor.fetchall()
@@ -429,157 +432,148 @@ class CommunityManager:
 # --------------------------------------------------------------------
 # 3) SEMrush Query Code
 # --------------------------------------------------------------------
-def build_semrush_url(api_type, phrase, api_key, database='us',
-                      export_columns='', display_limit=None, debug_mode=False):
+def build_semrush_url(api_type, phrase, api_key, database="us", export_columns="", display_limit=None, debug_mode=False):
     """Build the Semrush API URL with the required parameters."""
-    base_url = 'https://api.semrush.com'
+    base_url = "https://api.semrush.com"
     params = {
-        'type': api_type,
-        'key': api_key,
-        'phrase': phrase,
-        'database': database
+        "type": api_type,
+        "key": api_key,
+        "phrase": phrase,
+        "database": database,
     }
     if export_columns:
-        params['export_columns'] = export_columns
+        params["export_columns"] = export_columns
     if display_limit is not None:
-        params['display_limit'] = display_limit
+        params["display_limit"] = display_limit
 
-    query_str = '&'.join([f"{k}={requests.utils.quote(str(v))}" for k,v in params.items()])
+    query_str = "&".join([f"{k}={requests.utils.quote(str(v))}" for k, v in params.items()])
     full_url = f"{base_url}/?{query_str}"
     return full_url
 
 def parse_semrush_response(response_text, debug_mode=False):
     """Utility to parse SEMrush CSV-like response text."""
-    if "ERROR" in response_text:
-        return []
+    # Check if there are newline characters; if not, assume one single line response.
+    lines = response_text.strip().split("\n")
+    if len(lines) == 1:
+        parts = lines[0].split(";")
+        if len(parts) < 4:
+            return []
+        # First 4 parts are headers.
+        headers = parts[:4]
+        # Map headers to desired keys.
+        header_map = {
+            "Keyword": "Ph",
+            "Search Volume": "Nq",
+            "Keyword Difficulty Index": "Kd",
+            "Intent 3rd stage ckd": "In"
+        }
+        mapped_headers = [header_map.get(h.strip(), h.strip()) for h in headers]
+        data_rows = []
+        # Group subsequent parts in groups of 4.
+        for i in range(4, len(parts), 4):
+            row = parts[i:i+4]
+            if len(row) == 4:
+                row_dict = {mapped_headers[j]: row[j].strip() for j in range(4)}
+                data_rows.append(row_dict)
+        return data_rows
+    else:
+        # If multiple lines, assume first line is header.
+        headers = lines[0].split(";")
+        header_map = {
+            "Keyword": "Ph",
+            "Search Volume": "Nq",
+            "Keyword Difficulty Index": "Kd",
+            "Intent 3rd stage ckd": "In"
+        }
+        mapped_headers = [header_map.get(h.strip(), h.strip()) for h in headers]
+        data = []
+        for line in lines[1:]:
+            row_values = line.split(";")
+            if len(row_values) != len(mapped_headers):
+                continue
+            row_dict = {mapped_headers[i]: row_values[i].strip() for i in range(len(mapped_headers))}
+            data.append(row_dict)
+        return data
 
-    lines = response_text.strip().split('\n')
-    if len(lines) < 2:
-        return []
-
-    headers = lines[0].split(';')
-    raw_rows = [line.split(';') for line in lines[1:]]
-    data = []
-    for row_values in raw_rows:
-        if len(row_values) != len(headers):
-            continue
-        row_dict = {}
-        for h, val in zip(headers, row_values):
-            row_dict[h] = val
-        data.append(row_dict)
-    return data
-
-def query_semrush_api(keyword, database='us', debug_mode=False):
-    """Query Semrush API for keyword data (overview + related)."""
+def query_semrush_api(keyword, database="us", debug_mode=False):
+    """Query SEMrush API using the new related keyword research route."""
     api_key = os.getenv("SEMRUSH_API_KEY", "")
     if not api_key:
-        return {'error': "No SEMRUSH_API_KEY found in .env"}
+        return {"error": "No SEMRUSH_API_KEY found in .env"}
     try:
-        # 1) Overview
-        overview_url = build_semrush_url(
-            api_type='phrase_these',
-            phrase=keyword,
-            api_key=api_key,
-            database=database,
-            export_columns='Ph,Vo,Kd,CpC,Co,Nr,Td',
-            debug_mode=debug_mode
+        # Build the new URL using the updated parameters
+        new_url = (
+            f"https://api.semrush.com/?type=phrase_related"
+            f"&key={api_key}"
+            f"&phrase={keyword}"
+            f"&export_columns=Keyword,Search Volume,Keyword Difficulty Index,Intent 3rd stage ckd"
+            f"&database={database}"
+            f"&display_limit=25"
+            f"&display_sort=kd_desc"
+            f"&display_filter=%2B|Nq|Gt|99|%2B|Nq|Lt|1501|%2B|Kd|Lt|41|%2B|Kd|Gt|9"
         )
-        overview_resp = requests.get(overview_url)
-        if overview_resp.status_code != 200:
-            raise ValueError(
-                f"Overview request error (HTTP {overview_resp.status_code}): {overview_resp.text}"
-            )
-        overview_data = parse_semrush_response(overview_resp.text, debug_mode=debug_mode)
-        if not overview_data:
-            return {
-                'overview': None,
-                'related_keywords': [],
-                'error': "No overview data"
-            }
-        main_raw = overview_data[0]
+        response = requests.get(new_url)
+        if debug_mode:
+            st.write("Raw SEMrush API response:")
+            st.write(response.text)
+        if response.status_code != 200:
+            raise ValueError(f"Request error (HTTP {response.status_code}): {response.text}")
+
+        data = parse_semrush_response(response.text, debug_mode=debug_mode)
+        if not data:
+            return {"overview": None, "related_keywords": [], "error": "No data returned"}
+
+        # Use the first result as the main overview
+        main_keyword = data[0]
         overview_obj = {
-            'Ph':  main_raw.get('Keyword', keyword),
-            'Vo':  "0",
-            'Kd':  main_raw.get('Keyword Difficulty Index', "0"),
-            'CpC': "0",
-            'Co':  main_raw.get('Competition', "0"),
-            'Nr':  main_raw.get('Number of Results', "0"),
-            'Td':  main_raw.get('Trends', "0"),
+            "Ph": main_keyword.get("Ph", keyword),
+            "Nq": main_keyword.get("Nq", "0"),
+            "Kd": main_keyword.get("Kd", "0"),
+            "In": main_keyword.get("In", ""),
         }
-        # 2) Related
-        related_url = build_semrush_url(
-            api_type='phrase_related',
-            phrase=keyword,
-            api_key=api_key,
-            database=database,
-            export_columns='Ph,Vo,Kd,CpC,Co,Nr,Td',
-            display_limit=10,
-            debug_mode=debug_mode
-        )
-        related_resp = requests.get(related_url)
-        if related_resp.status_code != 200:
-            raise ValueError(
-                f"Related request error (HTTP {related_resp.status_code}): {related_resp.text}"
-            )
-        related_data = parse_semrush_response(related_resp.text, debug_mode=debug_mode)
+
+        # Process the full list as related keywords
         related_list = []
-        for rd in related_data:
+        for item in data:
             related_list.append({
-                'Ph':  rd.get('Keyword', ""),
-                'Vo':  "0",
-                'Kd':  rd.get('Keyword Difficulty Index', "0"),
-                'CpC': "0",
-                'Co':  rd.get('Competition', "0"),
-                'Nr':  rd.get('Number of Results', "0"),
-                'Td':  rd.get('Trends', "0")
+                "Ph": item.get("Ph", ""),
+                "Nq": item.get("Nq", "0"),
+                "Kd": item.get("Kd", "0"),
+                "In": item.get("In", ""),
             })
-        return {
-            'overview': overview_obj,
-            'related_keywords': related_list,
-            'error': None
-        }
+
+        return {"overview": overview_obj, "related_keywords": related_list, "error": None}
     except Exception as e:
-        return {
-            'overview': None,
-            'related_keywords': [],
-            'error': f"Exception: {str(e)}"
-        }
+        return {"overview": None, "related_keywords": [], "error": f"Exception: {str(e)}"}
 
 def get_keyword_suggestions(topic, debug_mode=False):
     """Returns a dict with main_keyword, related_keywords, error."""
     results = query_semrush_api(topic, debug_mode=debug_mode)
-    if results.get('error'):
+    if results.get("error"):
         return results
-    return {
-        'main_keyword': results['overview'],
-        'related_keywords': results['related_keywords'],
-        'error': None
-    }
+    return {"main_keyword": results["overview"], "related_keywords": results["related_keywords"], "error": None}
 
 def format_keyword_report(keyword_data):
     """Format keyword data into a readable report."""
-    if not keyword_data or keyword_data.get('error'):
+    if not keyword_data or keyword_data.get("error"):
         return "No keyword data available"
     lines = ["Keyword Research Report:\n"]
-    main = keyword_data.get('main_keyword')
+    main = keyword_data.get("main_keyword")
     if main:
-        lines.append(f"**Main Keyword**: {main['Ph']}")
-        lines.append(f"- Volume: {main['Vo']}")
-        lines.append(f"- Difficulty: {main['Kd']}")
-        lines.append(f"- CPC: {main['CpC']}")
+        lines.append(f"**Main Keyword**: {main.get('Ph', 'N/A')}")
+        lines.append(f"- Volume: {main.get('Nq', 'N/A')}")
+        lines.append(f"- Difficulty: {main.get('Kd', 'N/A')}")
         lines.append("")
-    related = keyword_data.get('related_keywords', [])
+    related = keyword_data.get("related_keywords", [])
     if related:
         lines.append("**Related Keywords**:")
-        for kw in related:
-            lines.append(f" - {kw['Ph']} (Vol={kw['Vo']}, Diff={kw['Kd']})")
+        for rk in related:
+            lines.append(f" - {rk.get('Ph', 'N/A')} (Vol={rk.get('Nq', 'N/A')}, Diff={rk.get('Kd', 'N/A')}, Intent={rk.get('In', 'N/A')})")
     return "\n".join(lines)
 
 # --------------------------------------------------------------------
 # 4) LLM Query Functions
 # --------------------------------------------------------------------
-
-
 def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[str, dict, str]:
     """
     Calls OpenAI's Chat Completion API (ChatGPT) with conversation history support.
@@ -589,46 +583,29 @@ def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[
     url = "https://api.openai.com/v1/chat/completions"
     try:
         api_key = st.secrets["OPENAI_API_KEY"]
-    except:
+    except Exception:
         return "Error: No OPENAI_API_KEY found in st.secrets.", {}, ""
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {api_key}'
-    }
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
     messages = []
     if conversation_history:
         messages.extend(conversation_history)
-    messages.append({
-        'role': 'user',
-        'content': message
-    })
-    payload = {
-        "model": "o1-mini",
-        "messages": messages,
-        "max_completion_tokens": 20000
-    }
+    messages.append({"role": "user", "content": message})
+    payload = {"model": "o1-mini", "messages": messages, "max_completion_tokens": 20000}
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=240)
         response.raise_for_status()
         response_data = response.json()
         raw_response = json.dumps(response_data, indent=2)
-        
         if "choices" in response_data and len(response_data["choices"]) > 0:
             content = response_data["choices"][0]["message"]["content"]
             token_usage = response_data.get("usage", {})
-            
             if conversation_history is not None:
-                conversation_history.append({
-                    'role': 'assistant',
-                    'content': content
-                })
+                conversation_history.append({"role": "assistant", "content": content})
             return content, token_usage, raw_response
-            
         return "Could not extract content from ChatGPT response.", {}, raw_response
-        
     except requests.exceptions.RequestException as e:
         error_message = f"API request failed: {str(e)}"
-        if hasattr(e, 'response') and e.response is not None:
+        if hasattr(e, "response") and e.response is not None:
             error_message += f"\nResponse: {e.response.text}"
             raw_error = e.response.text
         else:
@@ -642,11 +619,33 @@ def query_llm_api(message: str, conversation_history: list = None) -> tuple[str,
     Dispatches the API call to the selected LLM based on the sidebar model selection.
     Returns: (processed_response, token_usage, raw_response)
     """
-    model = st.session_state.get('selected_model', 'ChatGPT (o1)')
+    model = st.session_state.get("selected_model", "ChatGPT (o1)")
     if model == "ChatGPT (o1)":
         return query_chatgpt_api(message, conversation_history)
     else:
         return "Selected model not supported.", {}, ""
+
+# --------------------------------------------------------------------
+# Autosave Callback for Final Article
+# --------------------------------------------------------------------
+def autosave_final_article():
+    article_id = st.session_state.get("article_id")
+    if article_id:
+        updated_title = st.session_state.get("final_title", "")
+        updated_text = st.session_state.get("final_article", "")
+        updated_meta_title = st.session_state.get("final_meta_title", "")
+        updated_meta_desc = st.session_state.get("final_meta_desc", "")
+        saved_id = db.save_article_content(
+            project_id=st.session_state["project_id"],
+            article_title=updated_title or "Auto-Generated Title",
+            article_content=updated_text,
+            article_schema=None,
+            meta_title=updated_meta_title,
+            meta_description=updated_meta_desc,
+            article_id=article_id,
+        )
+        st.session_state["article_id"] = saved_id
+        st.success("Document auto-saved!")
 
 # --------------------------------------------------------------------
 # 5) Optional Website Scraping
@@ -657,7 +656,6 @@ def scrape_website(url):
         parsed = urlparse(url)
         if not parsed.netloc:
             return "Invalid URL"
-        # Quick check of robots.txt
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
         r_robots = requests.get(robots_url, timeout=5)
         if r_robots.status_code == 200 and "Disallow: /" in r_robots.text:
@@ -704,10 +702,8 @@ if "token_usage_history" not in st.session_state:
 # Sidebar: LLM Model Selector
 # --------------------------------------------------------------------
 debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
-model_options = {
-    "ChatGPT (o1)": "o1-mini"
-}
-st.session_state['selected_model'] = st.sidebar.selectbox("Select Model", list(model_options.keys()))
+model_options = {"ChatGPT (o1)": "o1-mini"}
+st.session_state["selected_model"] = st.sidebar.selectbox("Select Model", list(model_options.keys()))
 
 # --------------------------------------------------------------------
 # Sidebar: Project Selection
@@ -764,10 +760,9 @@ with st.expander("1) Create or Update Project", expanded=(st.session_state["proj
             proj_data = dict(proj_data)
             st.write(f"**Loaded Project**: {proj_data['name']} (ID: {proj_data['id']})")
             existing_care_areas = json.loads(proj_data.get("care_areas", "[]")) if proj_data.get("care_areas") else []
-            existing_notes = {}
             try:
                 existing_notes = json.loads(proj_data.get("notes") or "{}")
-            except:
+            except Exception:
                 existing_notes = {}
             def_need = existing_notes.get("consumer_need", "")
             def_tone = existing_notes.get("tone_of_voice", "")
@@ -802,7 +797,6 @@ Suggest 5 potential article topics.
 """
                 with st.spinner("Generating topic suggestions..."):
                     suggestions_raw, token_usage, raw_response = query_llm_api(prompt_for_topics)
-                # Display token usage and costs for this iteration
                 costs = calculate_token_costs(token_usage)
                 st.write(f"""
 **Token Usage & Costs:**
@@ -872,7 +866,6 @@ Suggest 5 potential article topics.
 """
             with st.spinner("Generating topic suggestions..."):
                 suggestions_raw, token_usage, raw_response = query_llm_api(prompt_for_topics)
-            # Display token usage and costs for this iteration
             costs = calculate_token_costs(token_usage)
             st.write(f"""
 **Token Usage & Costs:**
@@ -911,7 +904,8 @@ Suggest 5 potential article topics.
                 }
                 new_id = db.create_project(p_data)
                 st.session_state["project_id"] = new_id
-                st.success(f"Created project '{new_name}' (ID={new_id}).")
+                col1, col2 = st.columns([1, 1])
+                col1.success("Project created successfully! Please select it from the drop down menu on the left to begin working.")
                 st.rerun()
             else:
                 st.error("Please enter a project name.")
@@ -925,10 +919,9 @@ if st.session_state["project_id"]:
         st.write("### Existing Keywords")
         if kws:
             for kw in kws:
-                col1, col2 = st.columns([8,1])
+                col1, col2 = st.columns([8, 1])
                 col1.write(
-                    f"- **{kw['keyword']}**"
-                    f" (Vol={kw['search_volume']}, Diff={kw['keyword_difficulty']})"
+                    f"- **{kw['keyword']}** (Vol={kw['search_volume']}, Diff={kw['keyword_difficulty']})"
                 )
                 if col2.button("X", key=f"kwdel_{kw['id']}"):
                     db.delete_keyword(kw["id"])
@@ -969,32 +962,31 @@ if st.session_state["project_id"]:
                 main_kw = data["main_keyword"]
                 related_kws = data["related_keywords"]
                 if main_kw:
-                    col1, col2 = st.columns([8,1])
+                    col1, col2 = st.columns([8, 1])
                     col1.markdown(
-                        f"**Main Keyword**: {main_kw['Ph']} "
-                        f"(Volume={main_kw['Vo']}, Diff={main_kw['Kd']})"
+                        f"**Main Keyword**: {main_kw.get('Ph', 'N/A')} (Volume={main_kw.get('Nq', 'N/A')}, Diff={main_kw.get('Kd', 'N/A')})"
                     )
-                    if col2.button("➕", key=f"add_main_{main_kw['Ph']}"):
+                    if col2.button("➕", key=f"add_main_{main_kw.get('Ph', '')}"):
                         db.add_keyword(
                             st.session_state["project_id"],
-                            main_kw['Ph'],
-                            main_kw['Vo'],
+                            main_kw.get("Ph", ""),
+                            main_kw.get("Nq", 0),
                             None,
-                            main_kw['Kd']
+                            main_kw.get("Kd", 0),
                         )
                         st.rerun()
                 if related_kws:
                     st.write("**Related Keywords**:")
-                    for rk in related_kws:
-                        col1, col2 = st.columns([8,1])
-                        col1.write(f"- {rk['Ph']} (Vol={rk['Vo']}, Diff={rk['Kd']})")
-                        if col2.button("➕", key=f"add_rel_{rk['Ph']}"):
+                    for idx, rk in enumerate(related_kws):
+                        col1, col2 = st.columns([8, 1])
+                        col1.write(f"- {rk.get('Ph', 'N/A')} (Vol={rk.get('Nq', 'N/A')}, Diff={rk.get('Kd', 'N/A')}, Intent={rk.get('In', 'N/A')})")
+                        if col2.button("➕", key=f"add_rel_{rk.get('Ph', '')}_{idx}"):
                             db.add_keyword(
                                 st.session_state["project_id"],
-                                rk['Ph'],
-                                rk['Vo'],
+                                rk.get("Ph", ""),
+                                rk.get("Nq", 0),
                                 None,
-                                rk['Kd']
+                                rk.get("Kd", 0),
                             )
                             st.rerun()
 
@@ -1008,7 +1000,7 @@ if st.session_state["project_id"]:
         st.session_state["article_brief"] = st.text_area(
             "Enter your article brief/outlines",
             value=st.session_state["article_brief"],
-            height=150
+            height=150,
         )
         if st.button("Save Brief"):
             st.success("Brief saved (in session).")
@@ -1023,14 +1015,14 @@ if st.session_state["project_id"]:
             min_value=200,
             max_value=20000,
             value=1000,
-            step=100
+            step=100,
         )
         number_of_sections = st.number_input(
             "Number of sections",
             min_value=1,
             max_value=20,
             value=5,
-            step=1
+            step=1,
         )
         new_article_name = ""
         if not st.session_state["article_id"]:
@@ -1046,7 +1038,7 @@ if st.session_state["project_id"]:
                 pinfo_dict = dict(pinfo)
                 try:
                     project_notes = json.loads(pinfo_dict.get("notes", "{}"))
-                except:
+                except Exception:
                     project_notes = {}
                 journey_stage = pinfo_dict.get("journey_stage", "")
                 category = pinfo_dict.get("category", "")
@@ -1058,7 +1050,6 @@ if st.session_state["project_id"]:
                 target_audience = project_notes.get("target_audience", [])
                 freeform_notes = project_notes.get("freeform_notes", "")
                 topic_in_notes = project_notes.get("topic", "").strip()
-            # COMMUNITY DETAILS are no longer included at article-generation time.
             community_details_text = ""
             context_msg = f"""
 MAIN TOPIC: {topic_in_notes}
@@ -1104,21 +1095,17 @@ Return ONLY a JSON object with this structure:
     "section_titles": ["Title 1", "Title 2", ...],
 }}
 """
-            # Loop up to 5 iterations to ensure the word count is met
             max_iterations = 5
             iteration = 1
             final_response = None
             while iteration <= max_iterations:
                 with st.spinner(f"Generating full article (Iteration {iteration}/{max_iterations})..."):
                     response, token_usage, raw_response = query_llm_api(full_article_prompt)
-                    # Store token usage in history
                     st.session_state["token_usage_history"].append({
                         "iteration": iteration,
                         "timestamp": datetime.now().strftime("%H:%M:%S"),
-                        "usage": token_usage
+                        "usage": token_usage,
                     })
-                    
-                    # Display token usage and costs for this iteration
                     costs = calculate_token_costs(token_usage)
                     st.write(f"""
 **Token Usage & Costs:**
@@ -1126,26 +1113,18 @@ Return ONLY a JSON object with this structure:
 - Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
 - Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
 """)
-                    
                     if debug_mode:
                         st.write("**Raw API Response:**")
                         st.code(raw_response, language="json")
                 try:
-                    # Clean and parse the JSON response
                     article_text = clean_json_response(response)
                     word_count = len(article_text.split())
-                    
-                    # Check for zero words case
                     if word_count == 0:
                         st.warning("Generated article appears to be empty. Retrying...")
-                        iteration = 1  # Reset iteration counter
-                        continue  # Restart from beginning
-                        
+                        iteration = 1
+                        continue
                     if word_count >= desired_article_length:
-                        final_response = {
-                            "article_content": article_text,
-                            "section_titles": []
-                        }
+                        final_response = {"article_content": article_text, "section_titles": []}
                         break
                     else:
                         additional_needed = desired_article_length - word_count
@@ -1163,11 +1142,9 @@ Return the complete expanded article in the same JSON format as before.
                         iteration += 1
                 except Exception as e:
                     st.error("Failed to parse article JSON: " + str(e))
-                    # Check if the response is empty or contains no words
                     if not response.strip() or len(response.strip().split()) == 0:
                         st.warning("Empty response received. Restarting generation process...")
-                        iteration = 1  # Reset iteration counter
-                        # Reset prompt to original
+                        iteration = 1
                         full_article_prompt = f"""
 Generate a comprehensive article that MUST be AT LEAST {desired_article_length} words (this is a strict minimum).
 
@@ -1233,43 +1210,52 @@ Return ONLY a JSON object with this structure:
         else:
             current_draft_text = st.session_state["drafts_by_article"].get(article_id, "")
             st.write("### Current Article Draft (with numeric markers)")
-            new_draft = st.text_area(
-                "Current Article Draft",
-                value=current_draft_text,
-                height=300
-            )
+            new_draft = st.text_area("Current Article Draft", value=current_draft_text, height=300)
             if new_draft != current_draft_text:
                 st.session_state["drafts_by_article"][article_id] = new_draft
 
             # Get current refine instructions from session state
             refine_instructions = st.session_state.get("refine_instructions_by_article", {}).get(article_id, "")
-
-            # Create text area for refine instructions
             new_refine_instructions = st.text_area(
                 "Refine Instructions",
                 value=refine_instructions,
-                help="Enter instructions for refining the article"
+                help="Enter instructions for refining the article",
             )
-
-            # Update session state if instructions changed
             if new_refine_instructions != refine_instructions:
                 if "refine_instructions_by_article" not in st.session_state:
                     st.session_state["refine_instructions_by_article"] = {}
                 st.session_state["refine_instructions_by_article"][article_id] = new_refine_instructions
 
-            # Only proceed with refinement if there are instructions
             if new_refine_instructions:
-                if st.button("Refine Article"):
+                col1, col2, col3 = st.columns([3, 2, 2])
+                if col2.button("Refine Article", use_container_width=True):
                     with st.spinner("Refining article..."):
                         refined_text, token_usage, raw_response = query_llm_api(
                             f"Refine the article according to these instructions: {new_refine_instructions}"
                         )
+                        st.session_state["drafts_by_article"][article_id] = refined_text
+                        st.success("Article refined.")
+                if col3.button("Fix Format", use_container_width=True):
+                    with st.spinner("Fixing format..."):
+                        current_draft = st.session_state["drafts_by_article"].get(article_id, "")
+                        fix_format_prompt = f"""Please reformat the following JSON so that it is properly formatted. Remove any extra characters or markdown formatting, and return only the valid JSON object in the following structure:
+{{
+    "article_content": "The complete article with section markers",
+    "section_titles": ["Title 1", "Title 2", ...]
+}}
+
+JSON to fix:
+{current_draft}
+"""
+                        fixed_text, token_usage, raw_response = query_llm_api(fix_format_prompt)
+                        st.session_state["drafts_by_article"][article_id] = fixed_text
+                        st.success("Article format fixed.")
 
 # --------------------------------------------------------------------
-# 5) Save/Update Final Article
+# 5) Save/Update Final Article (Auto-Saved)
 # --------------------------------------------------------------------
 if st.session_state["project_id"]:
-    with st.expander("5) Save/Update Final Article"):
+    with st.expander("5) Final Article (Auto-Saved)"):
         article_id = st.session_state["article_id"]
         if not article_id:
             st.info("No article selected. Generate or select one first.")
@@ -1283,32 +1269,32 @@ if st.session_state["project_id"]:
                 existing_title = article_db_row["article_title"] or ""
                 existing_meta_title = article_db_row["meta_title"] or ""
                 existing_meta_desc = article_db_row["meta_description"] or ""
-            st.write("### Article Title")
-            updated_article_title = st.text_input("Give your article a clear title", value=existing_title)
             default_meta_title = st.session_state.get("meta_title_by_article", {}).get(article_id, "") or existing_meta_title
             default_meta_desc = st.session_state.get("meta_desc_by_article", {}).get(article_id, "") or existing_meta_desc
-            final_text = st.text_area("Final Article", draft_text, height=300)
-            meta_title = st.text_input("Meta Title", value=default_meta_title)
-            meta_desc = st.text_area("Meta Description", value=default_meta_desc, height=68)
-            if st.button("Save Article to DB"):
-                saved_id = db.save_article_content(
-                    project_id=st.session_state["project_id"],
-                    article_title=updated_article_title or "Auto-Generated Title",
-                    article_content=final_text,
-                    article_schema=None,
-                    meta_title=meta_title,
-                    meta_description=meta_desc,
-                    article_id=article_id
-                )
-                st.session_state["drafts_by_article"][saved_id] = final_text
-                if "meta_title_by_article" not in st.session_state:
-                    st.session_state["meta_title_by_article"] = {}
-                st.session_state["meta_title_by_article"][saved_id] = meta_title
-                if "meta_desc_by_article" not in st.session_state:
-                    st.session_state["meta_desc_by_article"] = {}
-                st.session_state["meta_desc_by_article"][saved_id] = meta_desc
-                st.success("Article saved to DB!")
-                st.session_state["article_id"] = saved_id
+            st.write("### Article Title")
+            updated_article_title = st.text_input("Give your article a clear title", key="final_title", value=existing_title, on_change=autosave_final_article)
+            final_text = st.text_area("Final Article", key="final_article", value=draft_text, height=300, on_change=autosave_final_article)
+            # Fix: Update the session keys for meta title and description
+            meta_title = st.text_input("Meta Title", key="final_meta_title", value=default_meta_title, on_change=autosave_final_article)
+            meta_desc = st.text_area("Meta Description", key="final_meta_desc", value=default_meta_desc, height=68, on_change=autosave_final_article)
+            col1, col2 = st.columns([1, 1])
+            if col1.button("Generate Meta Content"):
+                with st.spinner("Generating meta title and description..."):
+                    generated_title, generated_desc = generate_meta_content(final_text)
+                    if generated_title and generated_desc:
+                        # Update both the per-article state and the final text input keys
+                        st.session_state["final_meta_title"] = generated_title
+                        st.session_state["final_meta_desc"] = generated_desc
+                        if "meta_title_by_article" not in st.session_state:
+                            st.session_state["meta_title_by_article"] = {}
+                        if "meta_desc_by_article" not in st.session_state:
+                            st.session_state["meta_desc_by_article"] = {}
+                        st.session_state["meta_title_by_article"][article_id] = generated_title
+                        st.session_state["meta_desc_by_article"][article_id] = generated_desc
+                        st.success("Meta content generated successfully!")
+                    else:
+                        st.error("Failed to generate meta content. Please try again.")
+            st.info("All changes are auto-saved as you edit.")
 
 # --------------------------------------------------------------------
 # 6) View Saved Article
@@ -1323,11 +1309,9 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
             st.write(f"**Meta Title**: {article_row['meta_title']}")
             st.write(f"**Meta Description**: {article_row['meta_description']}")
             st.markdown("**Article Content**:")
-            st.markdown(article_row['article_content'])
-            
-            # Add Copy Raw button with pyperclip
+            st.markdown(article_row["article_content"])
             if st.button("Copy Raw Markdown"):
-                pyperclip.copy(article_row['article_content'])
+                pyperclip.copy(article_row["article_content"])
                 st.toast("Article content copied to clipboard!")
             if st.button("Delete Saved Article", key="delete_saved_article"):
                 db.delete_article_content(article_row["id"])
@@ -1339,36 +1323,26 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
 # 7) Generate Community-Specific Revision
 # --------------------------------------------------------------------
 def get_care_area_details(comm_manager, community_id):
-    """Get detailed information about care areas and their related data"""
+    """Get detailed information about care areas and their related data."""
     care_areas = comm_manager.get_care_areas(community_id)
     detailed_care_areas = []
-    
     for care_area in care_areas:
-        # Convert SQLite Row to dict
         care_area = dict(care_area)
-        
-        # Get floor plans for this care area
         floor_plans = comm_manager.get_floor_plans(care_area["id"])
         floor_plan_details = []
         for fp in floor_plans:
-            # Convert floor plan SQLite Row to dict
             fp = dict(fp)
             floor_plan_details.append(
                 f"- {fp.get('name', 'N/A')}: {fp.get('bedrooms', 'N/A')} bed/{fp.get('bathrooms', 'N/A')} bath, {fp.get('square_footage', 'N/A')} sq ft"
             )
-        
-        # Get SAAs (Services, Activities, Amenities)
         saas = comm_manager.get_saas(care_area["id"])
         saa_by_type = {}
         for saa in saas:
-            # Convert SAA SQLite Row to dict
             saa = dict(saa)
             saa_type = saa.get("type", "Other")
             if saa_type not in saa_by_type:
                 saa_by_type[saa_type] = []
             saa_by_type[saa_type].append(saa.get("description", ""))
-            
-        # Build care area detail string using updated column names
         care_area_info = f"""
 Care Area: {care_area.get('care_area', 'N/A')}
 Description: {care_area.get('general_floor_plan_description', 'N/A')}
@@ -1383,9 +1357,7 @@ Available Floor Plans:
             for saa_type, descriptions in saa_by_type.items():
                 care_area_info += f"{saa_type.title()}:\n"
                 care_area_info += "\n".join(f"- {desc}" for desc in descriptions) + "\n"
-            
         detailed_care_areas.append(care_area_info)
-        
     return "\n\n".join(detailed_care_areas)
 
 if st.session_state.get("project_id") and st.session_state.get("article_id"):
@@ -1395,29 +1367,17 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
             st.info("No saved article found. Please generate and save an article first.")
         else:
             original_article = article_row["article_content"]
-            # Get the list of communities from the Community Manager
             communities = comm_manager.get_communities()
             community_names = ["None"] + [f"{c['community_name']} (ID: {c['id']})" for c in communities]
-            
-            # Use a unique key for the selectbox to prevent state conflicts
-            selected_rev_comm = st.selectbox(
-                "Select Community for Revision", 
-                community_names, 
-                key=f"rev_comm_{st.session_state['article_id']}"
-            )
-            
+            selected_rev_comm = st.selectbox("Select Community for Revision", community_names, key=f"rev_comm_{st.session_state['article_id']}")
             if selected_rev_comm != "None":
                 rev_comm_id = int(selected_rev_comm.split("ID:")[-1].replace(")", "").strip())
                 community = comm_manager.get_community(rev_comm_id)
-                
-                # Add a button to trigger the revision
                 if st.button("Generate Community Revision", key=f"gen_rev_{rev_comm_id}"):
-                    # Retrieve aliases and detailed care area info
                     aliases = comm_manager.get_aliases(rev_comm_id)
                     alias_list = [alias["alias"] for alias in aliases] if aliases else []
                     aliases_text = ", ".join(alias_list) if alias_list else "None"
                     care_area_details_text = get_care_area_details(comm_manager, rev_comm_id)
-                    
                     community_details_text = f"""
 COMMUNITY DETAILS:
 - Name: {community["community_name"]}
@@ -1444,7 +1404,7 @@ COMMUNITY DETAILS:
 
 REVISION REQUIREMENTS:
 1. Incorporate community-specific details naturally throughout the article
-2. Include relevant internal links to optimize keyword SEO; include each link a maximum of once in the article.
+2. Include relevant internal links to optimize keyword SEO; include each link a maximum of once in the article. YOU MAY NOT USE EACH LINK MORE THAN ONCE EVER
    - About Page: {community["about_page"]}
    - Contact Page: {community["contact_page"]}
    - Floor Plan Page: {community["floor_plan_page"]}
@@ -1465,7 +1425,6 @@ Return only the revised article text with all formatting preserved.
 """
                     with st.spinner("Generating community-specific revision..."):
                         revised_article_text, token_usage, raw_response = query_llm_api(revision_prompt)
-                        # Calculate costs from token usage
                         costs = calculate_token_costs(token_usage)
                         st.write(f"""
 **Token Usage & Costs:**
@@ -1476,20 +1435,35 @@ Return only the revised article text with all formatting preserved.
                         if debug_mode:
                             st.write("**Raw API Response:**")
                             st.code(raw_response, language="json")
-                            
                         new_rev_title = f"{article_row['article_title']} - Community Revision for {community['community_name']}"
                         article_dict = dict(article_row)
+                        
+                        # Update the drafts and session state before saving to DB
+                        if "drafts_by_article" not in st.session_state:
+                            st.session_state["drafts_by_article"] = {}
+                        st.session_state["drafts_by_article"][st.session_state["article_id"]] = revised_article_text
+                        
                         new_article_id = db.save_article_content(
                             project_id=st.session_state["project_id"],
                             article_title=new_rev_title,
                             article_content=revised_article_text,
                             article_schema=None,
                             meta_title=article_dict.get("meta_title", ""),
-                            meta_description=article_dict.get("meta_description", "")
+                            meta_description=article_dict.get("meta_description", ""),
                         )
                         
-                        # Update session state with new article while maintaining project
+                        # Update session state with new article ID and its content
                         st.session_state["article_id"] = new_article_id
+                        st.session_state["drafts_by_article"][new_article_id] = revised_article_text
+                        
+                        # Preserve meta information
+                        if "meta_title_by_article" not in st.session_state:
+                            st.session_state["meta_title_by_article"] = {}
+                        if "meta_desc_by_article" not in st.session_state:
+                            st.session_state["meta_desc_by_article"] = {}
+                        st.session_state["meta_title_by_article"][new_article_id] = article_dict.get("meta_title", "")
+                        st.session_state["meta_desc_by_article"][new_article_id] = article_dict.get("meta_description", "")
+                        
                         st.success(f"Community revision saved as new article (ID: {new_article_id}).")
                         st.rerun()
             else:
@@ -1508,8 +1482,7 @@ if debug_mode:
         "refine_instructions_by_article": st.session_state.get("refine_instructions_by_article", {}),
         "meta_title_by_article": st.session_state.get("meta_title_by_article", {}),
         "meta_desc_by_article": st.session_state.get("meta_desc_by_article", {}),
-        "token_usage_history": st.session_state.get("token_usage_history", [])
+        "token_usage_history": st.session_state.get("token_usage_history", []),
     })
     all_projects_debug = [dict(p) for p in projects]
     st.write("All Projects:", all_projects_debug)
-
