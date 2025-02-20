@@ -9,625 +9,22 @@ from bs4 import BeautifulSoup
 import re
 from dotenv import load_dotenv
 import pyperclip
+from config.settings import TARGET_AUDIENCES
+from database.database_manager import DatabaseManager
+from database.community_manager import CommunityManager
+from services.llm_service import query_chatgpt_api, query_llm_api, generate_meta_content
+from services.semrush_service import get_keyword_suggestions, format_keyword_report
+from services.scraping_service import scrape_website
+from utils.token_calculator import calculate_token_costs
+from utils.json_cleaner import clean_json_response, extract_article_content
+from services.community_service import get_care_area_details
 
 load_dotenv()  # This loads environment variables from .env
 
-TARGET_AUDIENCES = ["Seniors", "Adult Children", "Caregivers", "Health Professionals", "Other"]
+# Initialize database managers
+db = DatabaseManager()
+comm_manager = CommunityManager()
 
-def calculate_token_costs(token_usage):
-    # Cost per million tokens (in USD)
-    INPUT_COST_PER_MILLION = 1.10
-    OUTPUT_COST_PER_MILLION = 4.40
-
-    # Extract token counts
-    prompt_tokens = token_usage.get("prompt_tokens", 0)
-    completion_tokens = token_usage.get("completion_tokens", 0)
-
-    # Calculate costs
-    input_cost = (prompt_tokens / 1_000_000) * INPUT_COST_PER_MILLION
-    output_cost = (completion_tokens / 1_000_000) * OUTPUT_COST_PER_MILLION
-    total_cost = input_cost + output_cost
-
-    return {
-        "input_cost": input_cost,
-        "output_cost": output_cost,
-        "total_cost": total_cost,
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "total_tokens": prompt_tokens + completion_tokens,
-    }
-
-def clean_json_response(response: str) -> str:
-    """Clean and extract article content from various JSON response formats."""
-    # Remove any triple quotes and markdown formatting
-    response = response.replace("```json", "").replace("```", "")
-
-    # Check if response starts with a markdown header or plain text
-    if response.strip().startswith("##") or not response.strip().startswith("{"):
-        return response
-
-    try:
-        # First attempt: Try to parse the entire response as JSON
-        data = json.loads(response)
-
-        # Handle different JSON structures we might receive
-        if isinstance(data, dict):
-            if "article" in data:
-                return data["article"]
-            elif "content" in data:
-                if isinstance(data["content"], str):
-                    return data["content"]
-                try:
-                    nested_content = json.loads(data["content"])
-                    if isinstance(nested_content, dict):
-                        if "article" in nested_content:
-                            return nested_content["article"]
-                        elif "content" in nested_content:
-                            return nested_content["content"]
-                except Exception:
-                    return data["content"]
-            elif "role" in data and "content" in data:
-                return data["content"]
-            elif "article_content" in data:
-                return data["article_content"]
-            elif all(key in data for key in ["article_content", "section_titles", "meta_title", "meta_description"]):
-                return data["article_content"]
-
-        return response
-
-    except json.JSONDecodeError:
-        if not response.strip().startswith("{"):
-            return response
-
-        start_idx = response.find("{")
-        end_idx = response.rfind("}")
-
-        if start_idx == -1 or end_idx == -1:
-            return response
-
-        json_str = response[start_idx : end_idx + 1].strip()
-        try:
-            data = json.loads(json_str)
-            return clean_json_response(json.dumps(data))
-        except Exception:
-            return response
-
-def extract_article_content(response_text):
-    try:
-        json_str = clean_json_response(response_text)
-        response_data = json.loads(json_str)
-        if isinstance(response_data, dict) and "article" in response_data:
-            return response_data["article"]
-        return response_text
-    except Exception:
-        return response_text
-
-def generate_meta_content(article_content):
-    """Generate meta title and description for an article."""
-    prompt = f"""Given the following article content, generate an SEO-optimized meta title and meta description.
-    
-Requirements:
-- Meta title: 50-60 characters, compelling and keyword-rich
-- Meta description: 150-160 characters, engaging summary with call-to-action
-
-Article Content:
-{article_content}
-
-Return the response in JSON format:
-{{
-    "meta_title": "your generated title",
-    "meta_description": "your generated description"
-}}
-"""
-    response_text, token_usage, raw_response = query_llm_api(prompt)
-    try:
-        response_data = json.loads(clean_json_response(response_text))
-        return response_data.get("meta_title", ""), response_data.get("meta_description", "")
-    except Exception:
-        return "", ""
-
-# --------------------------------------------------------------------
-# 1) Database Manager (SQLite) for Grover Projects
-# --------------------------------------------------------------------
-class DatabaseManager:
-    def __init__(self):
-        self.conn = sqlite3.connect("grover.db", check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.cursor = self.conn.cursor()
-        self.create_tables()
-
-    def get_connection(self):
-        return self.conn
-
-    def create_tables(self):
-        """Create all required tables if they don't exist."""
-        self.cursor.executescript(
-            """
-            PRAGMA foreign_keys = ON;
-
-            CREATE TABLE IF NOT EXISTS projects (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                care_areas JSON NOT NULL,
-                journey_stage TEXT,
-                category TEXT,
-                format_type TEXT,
-                business_category TEXT,
-                notes TEXT,
-                is_base_project BOOLEAN DEFAULT TRUE,
-                is_duplicate BOOLEAN DEFAULT FALSE,
-                original_project_id INTEGER,
-                changes_note TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (original_project_id) 
-                    REFERENCES projects(id)
-                    ON DELETE SET NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS keywords (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER NOT NULL,
-                keyword TEXT NOT NULL,
-                search_volume INTEGER,
-                search_intent TEXT,
-                keyword_difficulty INTEGER,
-                is_primary BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (project_id) 
-                    REFERENCES projects(id)
-                    ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS base_article_content (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER NOT NULL,
-                article_title TEXT NOT NULL,
-                article_content TEXT NOT NULL,
-                article_schema TEXT,
-                meta_title TEXT,
-                meta_description TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-            );
-            """
-        )
-        self.conn.commit()
-
-    # Projects
-    def create_project(self, project_data):
-        current_time = datetime.now().isoformat()
-        self.cursor.execute(
-            """
-            INSERT INTO projects (
-                name,
-                care_areas,
-                journey_stage,
-                category,
-                format_type,
-                business_category,
-                notes,
-                is_base_project,
-                is_duplicate,
-                original_project_id,
-                created_at,
-                updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                project_data["name"],
-                json.dumps(project_data["care_areas"]),
-                project_data["journey_stage"],
-                project_data["category"],
-                project_data["format_type"],
-                project_data["business_category"],
-                project_data.get("notes", ""),
-                project_data.get("is_base_project", True),
-                project_data.get("is_duplicate", False),
-                project_data.get("original_project_id", None),
-                current_time,
-                current_time,
-            ),
-        )
-        self.conn.commit()
-        return self.cursor.lastrowid
-
-    def get_all_projects(self):
-        self.cursor.execute(
-            """
-            SELECT id, name, created_at
-            FROM projects
-            ORDER BY created_at DESC
-            """
-        )
-        return self.cursor.fetchall()
-
-    def get_project(self, project_id):
-        self.cursor.execute("SELECT * FROM projects WHERE id = ?", (project_id,))
-        return self.cursor.fetchone()
-
-    def update_project_state(self, project_id, state_data):
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                UPDATE projects SET
-                    name = ?,
-                    care_areas = ?,
-                    journey_stage = ?,
-                    category = ?,
-                    format_type = ?,
-                    business_category = ?,
-                    notes = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (
-                    state_data.get("name"),
-                    json.dumps(state_data.get("care_areas", [])),
-                    state_data.get("journey_stage"),
-                    state_data.get("category"),
-                    state_data.get("format_type"),
-                    state_data.get("business_category"),
-                    state_data.get("notes"),
-                    project_id,
-                ),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-
-    def delete_project(self, project_id):
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-            return cursor.rowcount > 0
-
-    # Keywords
-    def add_keyword(self, project_id, keyword, search_volume, search_intent, keyword_difficulty):
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO keywords
-                (project_id, keyword, search_volume, search_intent, keyword_difficulty)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (project_id, keyword, search_volume, search_intent, keyword_difficulty),
-            )
-            return cursor.lastrowid
-
-    def get_project_keywords(self, project_id):
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM keywords WHERE project_id = ?", (project_id,))
-            return cursor.fetchall()
-
-    def delete_keyword(self, keyword_id):
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM keywords WHERE id = ?", (keyword_id,))
-            return cursor.rowcount > 0
-
-    # Articles
-    def save_article_content(
-        self,
-        project_id,
-        article_title,
-        article_content,
-        article_schema=None,
-        meta_title=None,
-        meta_description=None,
-        article_id=None,
-    ):
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            if article_id:
-                cursor.execute(
-                    """
-                    UPDATE base_article_content
-                    SET
-                        article_title = ?,
-                        article_content = ?,
-                        article_schema = ?,
-                        meta_title = ?,
-                        meta_description = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """,
-                    (
-                        article_title,
-                        article_content,
-                        json.dumps(article_schema)
-                        if isinstance(article_schema, dict)
-                        else article_schema,
-                        meta_title,
-                        meta_description,
-                        article_id,
-                    ),
-                )
-                return article_id
-            else:
-                cursor.execute(
-                    """
-                    INSERT INTO base_article_content (
-                        project_id, article_title, article_content, article_schema,
-                        meta_title, meta_description,
-                        created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """,
-                    (
-                        project_id,
-                        article_title,
-                        article_content,
-                        json.dumps(article_schema)
-                        if isinstance(article_schema, dict)
-                        else article_schema,
-                        meta_title,
-                        meta_description,
-                    ),
-                )
-                return cursor.lastrowid
-
-    def get_all_articles_for_project(self, project_id):
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT id, article_title, meta_title, meta_description, article_content 
-                FROM base_article_content
-                WHERE project_id = ?
-                ORDER BY created_at DESC
-                """,
-                (project_id,),
-            )
-            return cursor.fetchall()
-
-    def get_article_content(self, article_id):
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM base_article_content WHERE id = ?", (article_id,))
-            return cursor.fetchone()
-
-    def delete_article_content(self, article_id):
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM base_article_content WHERE id = ?", (article_id,))
-            return cursor.rowcount > 0
-
-# --------------------------------------------------------------------
-# 2) Community Manager (SQLite) for Senior Living Communities
-# --------------------------------------------------------------------
-class CommunityManager:
-    def __init__(self):
-        self.conn = sqlite3.connect("senior_living.db", check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.cursor = self.conn.cursor()
-
-    def get_communities(self):
-        self.cursor.execute("SELECT * FROM communities ORDER BY community_name")
-        return self.cursor.fetchall()
-
-    def get_community(self, community_id):
-        self.cursor.execute("SELECT * FROM communities WHERE id = ?", (community_id,))
-        return self.cursor.fetchone()
-
-    def get_care_areas(self, community_id):
-        self.cursor.execute("SELECT * FROM care_areas WHERE community_id = ?", (community_id,))
-        return self.cursor.fetchall()
-
-    def get_aliases(self, community_id):
-        self.cursor.execute("SELECT * FROM community_aliases WHERE community_id = ?", (community_id,))
-        return self.cursor.fetchall()
-
-    def get_floor_plans(self, care_area_id):
-        self.cursor.execute("SELECT * FROM floor_plans WHERE care_area_id = ?", (care_area_id,))
-        return self.cursor.fetchall()
-
-    def get_saas(self, care_area_id):
-        self.cursor.execute("SELECT * FROM services_activities_amenities WHERE care_area_id = ?", (care_area_id,))
-        return self.cursor.fetchall()
-
-# --------------------------------------------------------------------
-# 3) SEMrush Query Code
-# --------------------------------------------------------------------
-def build_semrush_url(api_type, phrase, api_key, database="us", export_columns="", display_limit=None, debug_mode=False):
-    """Build the Semrush API URL with the required parameters."""
-    base_url = "https://api.semrush.com"
-    params = {
-        "type": api_type,
-        "key": api_key,
-        "phrase": phrase,
-        "database": database,
-    }
-    if export_columns:
-        params["export_columns"] = export_columns
-    if display_limit is not None:
-        params["display_limit"] = display_limit
-
-    query_str = "&".join([f"{k}={requests.utils.quote(str(v))}" for k, v in params.items()])
-    full_url = f"{base_url}/?{query_str}"
-    return full_url
-
-def parse_semrush_response(response_text, debug_mode=False):
-    """Utility to parse SEMrush CSV-like response text."""
-    # Check if there are newline characters; if not, assume one single line response.
-    lines = response_text.strip().split("\n")
-    if len(lines) == 1:
-        parts = lines[0].split(";")
-        if len(parts) < 4:
-            return []
-        # First 4 parts are headers.
-        headers = parts[:4]
-        # Map headers to desired keys.
-        header_map = {
-            "Keyword": "Ph",
-            "Search Volume": "Nq",
-            "Keyword Difficulty Index": "Kd",
-            "Intent 3rd stage ckd": "In"
-        }
-        mapped_headers = [header_map.get(h.strip(), h.strip()) for h in headers]
-        data_rows = []
-        # Group subsequent parts in groups of 4.
-        for i in range(4, len(parts), 4):
-            row = parts[i:i+4]
-            if len(row) == 4:
-                row_dict = {mapped_headers[j]: row[j].strip() for j in range(4)}
-                data_rows.append(row_dict)
-        return data_rows
-    else:
-        # If multiple lines, assume first line is header.
-        headers = lines[0].split(";")
-        header_map = {
-            "Keyword": "Ph",
-            "Search Volume": "Nq",
-            "Keyword Difficulty Index": "Kd",
-            "Intent 3rd stage ckd": "In"
-        }
-        mapped_headers = [header_map.get(h.strip(), h.strip()) for h in headers]
-        data = []
-        for line in lines[1:]:
-            row_values = line.split(";")
-            if len(row_values) != len(mapped_headers):
-                continue
-            row_dict = {mapped_headers[i]: row_values[i].strip() for i in range(len(mapped_headers))}
-            data.append(row_dict)
-        return data
-
-def query_semrush_api(keyword, database="us", debug_mode=False):
-    """Query SEMrush API using the new related keyword research route."""
-    api_key = os.getenv("SEMRUSH_API_KEY", "")
-    if not api_key:
-        return {"error": "No SEMRUSH_API_KEY found in .env"}
-    try:
-        # Build the new URL using the updated parameters
-        new_url = (
-            f"https://api.semrush.com/?type=phrase_related"
-            f"&key={api_key}"
-            f"&phrase={keyword}"
-            f"&export_columns=Keyword,Search Volume,Keyword Difficulty Index,Intent 3rd stage ckd"
-            f"&database={database}"
-            f"&display_limit=25"
-            f"&display_sort=kd_desc"
-            f"&display_filter=%2B|Nq|Gt|99|%2B|Nq|Lt|1501|%2B|Kd|Lt|41|%2B|Kd|Gt|9"
-        )
-        response = requests.get(new_url)
-        if debug_mode:
-            st.write("Raw SEMrush API response:")
-            st.write(response.text)
-        if response.status_code != 200:
-            raise ValueError(f"Request error (HTTP {response.status_code}): {response.text}")
-
-        data = parse_semrush_response(response.text, debug_mode=debug_mode)
-        if not data:
-            return {"overview": None, "related_keywords": [], "error": "No data returned"}
-
-        # Use the first result as the main overview
-        main_keyword = data[0]
-        overview_obj = {
-            "Ph": main_keyword.get("Ph", keyword),
-            "Nq": main_keyword.get("Nq", "0"),
-            "Kd": main_keyword.get("Kd", "0"),
-            "In": main_keyword.get("In", ""),
-        }
-
-        # Process the full list as related keywords
-        related_list = []
-        for item in data:
-            related_list.append({
-                "Ph": item.get("Ph", ""),
-                "Nq": item.get("Nq", "0"),
-                "Kd": item.get("Kd", "0"),
-                "In": item.get("In", ""),
-            })
-
-        return {"overview": overview_obj, "related_keywords": related_list, "error": None}
-    except Exception as e:
-        return {"overview": None, "related_keywords": [], "error": f"Exception: {str(e)}"}
-
-def get_keyword_suggestions(topic, debug_mode=False):
-    """Returns a dict with main_keyword, related_keywords, error."""
-    results = query_semrush_api(topic, debug_mode=debug_mode)
-    if results.get("error"):
-        return results
-    return {"main_keyword": results["overview"], "related_keywords": results["related_keywords"], "error": None}
-
-def format_keyword_report(keyword_data):
-    """Format keyword data into a readable report."""
-    if not keyword_data or keyword_data.get("error"):
-        return "No keyword data available"
-    lines = ["Keyword Research Report:\n"]
-    main = keyword_data.get("main_keyword")
-    if main:
-        lines.append(f"**Main Keyword**: {main.get('Ph', 'N/A')}")
-        lines.append(f"- Volume: {main.get('Nq', 'N/A')}")
-        lines.append(f"- Difficulty: {main.get('Kd', 'N/A')}")
-        lines.append("")
-    related = keyword_data.get("related_keywords", [])
-    if related:
-        lines.append("**Related Keywords**:")
-        for rk in related:
-            lines.append(f" - {rk.get('Ph', 'N/A')} (Vol={rk.get('Nq', 'N/A')}, Diff={rk.get('Kd', 'N/A')}, Intent={rk.get('In', 'N/A')})")
-    return "\n".join(lines)
-
-# --------------------------------------------------------------------
-# 4) LLM Query Functions
-# --------------------------------------------------------------------
-def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[str, dict, str]:
-    """
-    Calls OpenAI's Chat Completion API (ChatGPT) with conversation history support.
-    Requires st.secrets['OPENAI_API_KEY'] to be set.
-    Returns a tuple of (response_content, token_usage, raw_response)
-    """
-    url = "https://api.openai.com/v1/chat/completions"
-    try:
-        api_key = st.secrets["OPENAI_API_KEY"]
-    except Exception:
-        return "Error: No OPENAI_API_KEY found in st.secrets.", {}, ""
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-    messages = []
-    if conversation_history:
-        messages.extend(conversation_history)
-    messages.append({"role": "user", "content": message})
-    payload = {"model": "o1-mini", "messages": messages, "max_completion_tokens": 20000}
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=240)
-        response.raise_for_status()
-        response_data = response.json()
-        raw_response = json.dumps(response_data, indent=2)
-        if "choices" in response_data and len(response_data["choices"]) > 0:
-            content = response_data["choices"][0]["message"]["content"]
-            token_usage = response_data.get("usage", {})
-            if conversation_history is not None:
-                conversation_history.append({"role": "assistant", "content": content})
-            return content, token_usage, raw_response
-        return "Could not extract content from ChatGPT response.", {}, raw_response
-    except requests.exceptions.RequestException as e:
-        error_message = f"API request failed: {str(e)}"
-        if hasattr(e, "response") and e.response is not None:
-            error_message += f"\nResponse: {e.response.text}"
-            raw_error = e.response.text
-        else:
-            raw_error = str(e)
-        return error_message, {}, raw_error
-    except Exception as e:
-        return f"Unexpected error: {str(e)}", {}, str(e)
-
-def query_llm_api(message: str, conversation_history: list = None) -> tuple[str, dict, str]:
-    """
-    Dispatches the API call to the selected LLM based on the sidebar model selection.
-    Returns: (processed_response, token_usage, raw_response)
-    """
-    model = st.session_state.get("selected_model", "ChatGPT (o1)")
-    if model == "ChatGPT (o1)":
-        return query_chatgpt_api(message, conversation_history)
-    else:
-        return "Selected model not supported.", {}, ""
-
-# --------------------------------------------------------------------
-# Autosave Callback for Final Article
-# --------------------------------------------------------------------
 def autosave_final_article():
     article_id = st.session_state.get("article_id")
     if article_id:
@@ -646,36 +43,6 @@ def autosave_final_article():
         )
         st.session_state["article_id"] = saved_id
         st.success("Document auto-saved!")
-
-# --------------------------------------------------------------------
-# 5) Optional Website Scraping
-# --------------------------------------------------------------------
-def scrape_website(url):
-    """Scrape textual content from a single webpage."""
-    try:
-        parsed = urlparse(url)
-        if not parsed.netloc:
-            return "Invalid URL"
-        robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
-        r_robots = requests.get(robots_url, timeout=5)
-        if r_robots.status_code == 200 and "Disallow: /" in r_robots.text:
-            return "Website disallows scraping (robots.txt)."
-        r_page = requests.get(url, timeout=10)
-        if r_page.status_code != 200:
-            return f"Failed to retrieve page (HTTP {r_page.status_code})."
-        soup = BeautifulSoup(r_page.text, "html.parser")
-        for tag in soup(["script", "style"]):
-            tag.decompose()
-        text = " ".join(soup.stripped_strings)
-        return text
-    except Exception as e:
-        return f"Error scraping site: {e}"
-
-# --------------------------------------------------------------------
-# 6) Streamlit App Setup
-# --------------------------------------------------------------------
-db = DatabaseManager()
-comm_manager = CommunityManager()
 
 st.set_page_config(page_title="Grover (LLM's + SEMrush)", layout="wide")
 st.title("Grover: LLM Based, with SEMrush Keyword Research")
@@ -1274,26 +641,46 @@ if st.session_state["project_id"]:
             st.write("### Article Title")
             updated_article_title = st.text_input("Give your article a clear title", key="final_title", value=existing_title, on_change=autosave_final_article)
             final_text = st.text_area("Final Article", key="final_article", value=draft_text, height=300, on_change=autosave_final_article)
-            # Fix: Update the session keys for meta title and description
-            meta_title = st.text_input("Meta Title", key="final_meta_title", value=default_meta_title, on_change=autosave_final_article)
-            meta_desc = st.text_area("Meta Description", key="final_meta_desc", value=default_meta_desc, height=68, on_change=autosave_final_article)
+            if st.button("Generate Meta Content"):
+                generated_title, generated_desc = generate_meta_content(st.session_state.get("final_article", ""))
+                if generated_title and generated_desc:
+                    st.session_state["final_meta_title"] = generated_title
+                    st.session_state["final_meta_desc"] = generated_desc
+                    st.success("Meta content generated!")
+                else:
+                    st.error("Failed to generate meta content.")
+            meta_title = st.text_area(
+                "Meta Title",
+                value=st.session_state.get("final_meta_title", ""),
+                key="final_meta_title",
+                height=100,
+            )
+            meta_desc = st.text_area(
+                "Meta Description",
+                value=st.session_state.get("final_meta_desc", ""),
+                key="final_meta_desc",
+                height=100,
+            )
             col1, col2 = st.columns([1, 1])
-            if col1.button("Generate Meta Content"):
-                with st.spinner("Generating meta title and description..."):
-                    generated_title, generated_desc = generate_meta_content(final_text)
-                    if generated_title and generated_desc:
-                        # Update both the per-article state and the final text input keys
-                        st.session_state["final_meta_title"] = generated_title
-                        st.session_state["final_meta_desc"] = generated_desc
-                        if "meta_title_by_article" not in st.session_state:
-                            st.session_state["meta_title_by_article"] = {}
-                        if "meta_desc_by_article" not in st.session_state:
-                            st.session_state["meta_desc_by_article"] = {}
-                        st.session_state["meta_title_by_article"][article_id] = generated_title
-                        st.session_state["meta_desc_by_article"][article_id] = generated_desc
-                        st.success("Meta content generated successfully!")
-                    else:
-                        st.error("Failed to generate meta content. Please try again.")
+            if col1.button("Update Final Article"):
+                final_notes_json = {
+                    "consumer_need": existing_notes.get("consumer_need", ""),
+                    "tone_of_voice": existing_notes.get("tone_of_voice", ""),
+                    "target_audience": existing_notes.get("target_audience", []),
+                    "freeform_notes": existing_notes.get("freeform_notes", ""),
+                    "topic": existing_notes.get("topic", ""),
+                }
+                patch = {
+                    "name": existing_name,
+                    "care_areas": existing_care_areas,
+                    "journey_stage": existing_journey,
+                    "category": existing_category,
+                    "format_type": existing_format,
+                    "business_category": existing_bizcat,
+                    "notes": json.dumps(final_notes_json),
+                }
+                db.update_project_state(existing_id, patch)
+                st.success("Project updated.")
             st.info("All changes are auto-saved as you edit.")
 
 # --------------------------------------------------------------------
@@ -1322,44 +709,6 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
 # --------------------------------------------------------------------
 # 7) Generate Community-Specific Revision
 # --------------------------------------------------------------------
-def get_care_area_details(comm_manager, community_id):
-    """Get detailed information about care areas and their related data."""
-    care_areas = comm_manager.get_care_areas(community_id)
-    detailed_care_areas = []
-    for care_area in care_areas:
-        care_area = dict(care_area)
-        floor_plans = comm_manager.get_floor_plans(care_area["id"])
-        floor_plan_details = []
-        for fp in floor_plans:
-            fp = dict(fp)
-            floor_plan_details.append(
-                f"- {fp.get('name', 'N/A')}: {fp.get('bedrooms', 'N/A')} bed/{fp.get('bathrooms', 'N/A')} bath, {fp.get('square_footage', 'N/A')} sq ft"
-            )
-        saas = comm_manager.get_saas(care_area["id"])
-        saa_by_type = {}
-        for saa in saas:
-            saa = dict(saa)
-            saa_type = saa.get("type", "Other")
-            if saa_type not in saa_by_type:
-                saa_by_type[saa_type] = []
-            saa_by_type[saa_type].append(saa.get("description", ""))
-        care_area_info = f"""
-Care Area: {care_area.get('care_area', 'N/A')}
-Description: {care_area.get('general_floor_plan_description', 'N/A')}
-Starting Price: ${care_area.get('floor_plan_starting_at_price', 'N/A')} {care_area.get('floor_plan_billing_period', 'N/A')}
-Care Area URL: {care_area.get('care_area_url', 'N/A')}
-
-Available Floor Plans:
-{chr(10).join(floor_plan_details) if floor_plan_details else 'None'}
-"""
-        if saa_by_type:
-            care_area_info += "\nServices/Activities/Amenities:\n"
-            for saa_type, descriptions in saa_by_type.items():
-                care_area_info += f"{saa_type.title()}:\n"
-                care_area_info += "\n".join(f"- {desc}" for desc in descriptions) + "\n"
-        detailed_care_areas.append(care_area_info)
-    return "\n\n".join(detailed_care_areas)
-
 if st.session_state.get("project_id") and st.session_state.get("article_id"):
     with st.expander("7) Generate Community-Specific Revision"):
         article_row = db.get_article_content(st.session_state["article_id"])
