@@ -63,6 +63,8 @@ def generate_meta_content(article_content):
 Requirements:
 - Meta title: 50-60 characters, compelling and keyword-rich
 - Meta description: 150-160 characters, engaging summary with call-to-action
+- If any critical information seems to be missing, infer it from context and proceed with generation
+- Focus on the main topic and value proposition even if some details are unclear
 
 Article Content:
 {article_content}

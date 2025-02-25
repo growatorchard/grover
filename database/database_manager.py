@@ -190,51 +190,65 @@ class DatabaseManager:
         meta_description=None,
         article_id=None,
     ):
+        """Save or update article content with improved error handling and transaction management."""
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            if article_id:
-                cursor.execute(
-                    """
-                    UPDATE base_article_content
-                    SET
-                        article_title = ?,
-                        article_content = ?,
-                        article_schema = ?,
-                        meta_title = ?,
-                        meta_description = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """,
-                    (
-                        article_title,
-                        article_content,
-                        json.dumps(article_schema) if isinstance(article_schema, dict) else article_schema,
-                        meta_title,
-                        meta_description,
-                        article_id,
-                    ),
-                )
-                return article_id
-            else:
-                cursor.execute(
-                    """
-                    INSERT INTO base_article_content (
-                        project_id, article_title, article_content, article_schema,
-                        meta_title, meta_description,
-                        created_at, updated_at
+            try:
+                conn.execute("BEGIN")
+                cursor = conn.cursor()
+                
+                if article_id:
+                    cursor.execute(
+                        """
+                        UPDATE base_article_content
+                        SET
+                            article_title = ?,
+                            article_content = ?,
+                            article_schema = ?,
+                            meta_title = ?,
+                            meta_description = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ? AND project_id = ?
+                        """,
+                        (
+                            article_title,
+                            article_content,
+                            json.dumps(article_schema) if isinstance(article_schema, dict) else article_schema,
+                            meta_title,
+                            meta_description,
+                            article_id,
+                            project_id
+                        ),
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """,
-                    (
-                        project_id,
-                        article_title,
-                        article_content,
-                        json.dumps(article_schema) if isinstance(article_schema, dict) else article_schema,
-                        meta_title,
-                        meta_description,
-                    ),
-                )
-                return cursor.lastrowid
+                    if cursor.rowcount == 0:
+                        raise ValueError(f"No article found with ID {article_id} for project {project_id}")
+                    saved_id = article_id
+                else:
+                    cursor.execute(
+                        """
+                        INSERT INTO base_article_content (
+                            project_id, article_title, article_content, article_schema,
+                            meta_title, meta_description,
+                            created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """,
+                        (
+                            project_id,
+                            article_title,
+                            article_content,
+                            json.dumps(article_schema) if isinstance(article_schema, dict) else article_schema,
+                            meta_title,
+                            meta_description,
+                        ),
+                    )
+                    saved_id = cursor.lastrowid
+                
+                conn.commit()
+                return saved_id
+                
+            except Exception as e:
+                conn.rollback()
+                raise e
 
     def get_all_articles_for_project(self, project_id):
         with self.get_connection() as conn:

@@ -18,6 +18,7 @@ from services.scraping_service import scrape_website
 from utils.token_calculator import calculate_token_costs
 from utils.json_cleaner import clean_json_response, extract_article_content
 from services.community_service import get_care_area_details
+from services.article_service import ArticleService
 
 load_dotenv()  # This loads environment variables from .env
 
@@ -25,45 +26,57 @@ load_dotenv()  # This loads environment variables from .env
 db = DatabaseManager()
 comm_manager = CommunityManager()
 
+# Add this near the top of the file with other session state initializations
+if "show_project_success" not in st.session_state:
+    st.session_state["show_project_success"] = False
+
 def autosave_final_article():
+    """Automatically save article content to database when changes are made."""
     article_id = st.session_state.get("article_id")
-    if article_id:
+    project_id = st.session_state.get("project_id")
+    
+    if article_id and project_id:
         updated_title = st.session_state.get("final_title", "")
         updated_text = st.session_state.get("final_article", "")
         updated_meta_title = st.session_state.get("final_meta_title", "")
         updated_meta_desc = st.session_state.get("final_meta_desc", "")
-        saved_id = db.save_article_content(
-            project_id=st.session_state["project_id"],
-            article_title=updated_title or "Auto-Generated Title",
-            article_content=updated_text,
-            article_schema=None,
-            meta_title=updated_meta_title,
-            meta_description=updated_meta_desc,
-            article_id=article_id,
-        )
-        st.session_state["article_id"] = saved_id
-        st.success("Document auto-saved!")
+        
+        try:
+            saved_id = db.save_article_content(
+                project_id=project_id,
+                article_title=updated_title or "Auto-Generated Title",
+                article_content=updated_text,
+                article_schema=None,
+                meta_title=updated_meta_title,
+                meta_description=updated_meta_desc,
+                article_id=article_id,
+            )
+            st.session_state["article_id"] = saved_id
+            
+            # Update the drafts in session state
+            if "drafts_by_article" not in st.session_state:
+                st.session_state["drafts_by_article"] = {}
+            st.session_state["drafts_by_article"][article_id] = updated_text
+            
+        except Exception as e:
+            st.error(f"Error saving article: {str(e)}")
 
 st.set_page_config(page_title="Grover (LLM's + SEMrush)", layout="wide")
 st.title("Grover: LLM Based, with SEMrush Keyword Research")
 
-# Initialize session state variables if they don't exist
-if "drafts_by_article" not in st.session_state:
-    st.session_state["drafts_by_article"] = {}
-if "meta_title_by_article" not in st.session_state:
-    st.session_state["meta_title_by_article"] = {}
-if "meta_desc_by_article" not in st.session_state:
-    st.session_state["meta_desc_by_article"] = {}
-if "refine_instructions_by_article" not in st.session_state:
-    st.session_state["refine_instructions_by_article"] = {}
-if "topic_suggestions" not in st.session_state:
-    st.session_state["topic_suggestions"] = []
-if "selected_topic" not in st.session_state:
-    st.session_state["selected_topic"] = ""
-if "article_brief" not in st.session_state:
-    st.session_state["article_brief"] = ""
-if "token_usage_history" not in st.session_state:
-    st.session_state["token_usage_history"] = []
+from services.state_service import StateService
+from services.project_service import ProjectService
+from config.app_config import AppConfig
+
+# Initialize services
+state_service = StateService()
+project_service = ProjectService(db)
+
+# Initialize article service
+article_service = ArticleService(db)
+
+# Initialize session state
+state_service.initialize_session_state()
 
 # --------------------------------------------------------------------
 # Sidebar: LLM Model Selector
@@ -98,14 +111,25 @@ if st.session_state["project_id"]:
 if "article_id" not in st.session_state:
     st.session_state["article_id"] = None
 if st.session_state["project_id"]:
-    articles = db.get_all_articles_for_project(st.session_state["project_id"])
-    article_names = ["Create New Article"] + [f"{a['article_title']} (ID: {a['id']})" for a in articles]
-    selected_article_str = st.sidebar.selectbox("Select Article (within Project)", article_names)
-    if selected_article_str == "Create New Article":
-        st.session_state["article_id"] = None
-    else:
-        article_id = int(selected_article_str.split("ID:")[-1].replace(")", "").strip())
-        st.session_state["article_id"] = article_id
+    articles, article_names = article_service.get_article_display_list(st.session_state["project_id"])
+    
+    # Find the current index for the selected article
+    selected_index = 0
+    for i, article_name in enumerate(article_names):
+        if article_name != "Create New Article" and st.session_state.get("article_id") is not None:
+            article_id = int(article_name.split("ID:")[-1].replace(")", "").strip())
+            if article_id == st.session_state["article_id"]:
+                selected_index = i
+                break
+    
+    selected_article_str = st.sidebar.selectbox(
+        "Select Article (within Project)", 
+        article_names,
+        index=selected_index
+    )
+    
+    article_service.handle_article_selection(selected_article_str)
+    
     if st.session_state["article_id"]:
         if st.sidebar.button("Delete Article"):
             db.delete_article_content(st.session_state["article_id"])
@@ -117,165 +141,52 @@ if st.session_state["project_id"]:
 # 1) Create / Update Project
 # --------------------------------------------------------------------
 with st.expander("1) Create or Update Project", expanded=(st.session_state["project_id"] is None)):
-    if "topic_suggestions" not in st.session_state:
-        st.session_state["topic_suggestions"] = []
-    if "selected_topic" not in st.session_state:
-        st.session_state["selected_topic"] = ""
-    if st.session_state["project_id"]:
-        proj_data = db.get_project(st.session_state["project_id"])
-        if proj_data:
-            proj_data = dict(proj_data)
-            st.write(f"**Loaded Project**: {proj_data['name']} (ID: {proj_data['id']})")
-            existing_care_areas = json.loads(proj_data.get("care_areas", "[]")) if proj_data.get("care_areas") else []
-            try:
-                existing_notes = json.loads(proj_data.get("notes") or "{}")
-            except Exception:
-                existing_notes = {}
-            def_need = existing_notes.get("consumer_need", "")
-            def_tone = existing_notes.get("tone_of_voice", "")
-            def_audience = existing_notes.get("target_audience", "")
-            def_topic = existing_notes.get("topic", "")
-            freeform_notes = existing_notes.get("freeform_notes", "")
-            upd_name = st.text_input("Project Name", value=proj_data["name"])
-            upd_journey = st.selectbox("Consumer Journey Stage", ["Awareness", "Consideration", "Decision", "Retention", "Advocacy", "Other"], index=0)
-            upd_category = st.selectbox("Article Category", ["Senior Living", "Health/Wellness", "Lifestyle", "Financial", "Other"], index=0)
-            upd_care_areas = st.multiselect("Care Area(s)", ["Independent Living", "Assisted Living", "Memory Care", "Skilled Nursing"], default=existing_care_areas)
-            upd_format = st.selectbox("Format Type", ["Blog", "Case Study", "White Paper", "Guide", "Downloadable Guide", "Review", "Interactives", "Brand Content", "Infographic", "E-Book", "Email", "Social Media Posts", "User Generated Content", "Meme", "Checklist", "Video", "Podcast", "Other"], index=0)
-            upd_bizcat = st.selectbox("Business Category", ["Healthcare", "Senior Living", "Housing", "Lifestyle", "Other"], index=0)
-            upd_need = st.selectbox("Consumer Need", ["Educational", "Financial Guidance", "Medical Info", "Lifestyle/Wellness", "Other"], index=0)
-            upd_tone = st.selectbox("Tone of Voice", ["Professional", "Friendly", "Conversational", "Empathetic", "Other"], index=0)
-            upd_audience = st.multiselect("Target Audience", TARGET_AUDIENCES, default=existing_notes.get("target_audience", []))
-            st.write("#### Topic & Freeform Notes")
-            upd_topic = st.text_input("Topic (Optional)", value=def_topic)
-            upd_notes_text = st.text_area("Additional Notes", value=freeform_notes)
-            if st.button("Generate 5 Topics"):
-                prompt_for_topics = f"""
-Given the following details:
-- Journey Stage: {upd_journey}
-- Category: {upd_category}
-- Care Areas: {', '.join(upd_care_areas)}
-- Format: {upd_format}
-- Business Category: {upd_bizcat}
-- Consumer Need: {upd_need}
-- Tone of Voice: {upd_tone}
-- Target Audience: {', '.join(upd_audience)}
+    # Show success message if flag is set
+    if st.session_state.get("show_project_success", False):
+        st.success("Project created successfully! You may select this project from the 'Select Project' dropdown on the top left.")
 
-Suggest 5 potential article topics.
-"""
-                with st.spinner("Generating topic suggestions..."):
-                    suggestions_raw, token_usage, raw_response = query_llm_api(prompt_for_topics)
-                costs = calculate_token_costs(token_usage)
-                st.write(f"""
-**Token Usage & Costs:**
-- Input: {costs['prompt_tokens']:,} tokens (${costs['input_cost']:.4f})
-- Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
-- Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
-""")
-                if debug_mode:
-                    st.write("**Raw API Response:**")
-                    st.code(raw_response, language="json")
-                st.session_state["topic_suggestions"] = suggestions_raw.split("\n")
-                st.success("See suggested topics below.")
-            if st.session_state["topic_suggestions"]:
-                chosen_suggestion = st.selectbox("Choose a generated topic:", st.session_state["topic_suggestions"])
-                if st.button("Use Selected Topic"):
-                    upd_topic = chosen_suggestion
-                    st.session_state["topic_suggestions"] = []
-                    st.success(f"Topic set to: {chosen_suggestion}")
-            if st.button("Update Project"):
-                final_notes_json = {
-                    "consumer_need": upd_need,
-                    "tone_of_voice": upd_tone,
-                    "target_audience": upd_audience,
-                    "freeform_notes": upd_notes_text,
-                    "topic": upd_topic,
-                }
-                patch = {
-                    "name": upd_name,
-                    "care_areas": upd_care_areas,
-                    "journey_stage": upd_journey,
-                    "category": upd_category,
-                    "format_type": upd_format,
-                    "business_category": upd_bizcat,
-                    "notes": json.dumps(final_notes_json),
-                }
-                db.update_project_state(proj_data["id"], patch)
-                st.success("Project updated.")
-    else:
-        st.write("**Create a New Project**")
-        new_name = st.text_input("Project Name")
-        new_journey = st.selectbox("Consumer Journey Stage", ["Awareness", "Consideration", "Decision", "Retention", "Advocacy", "Other"], index=0)
-        new_category = st.selectbox("Article Category", ["Senior Living", "Health/Wellness", "Lifestyle", "Financial", "Other"], index=0)
-        new_care_areas = st.multiselect("Care Area(s)", ["Independent Living", "Assisted Living", "Memory Care", "Skilled Nursing"], default=[])
-        new_format = st.selectbox("Format Type", ["Blog", "Case Study", "White Paper", "Guide", "Downloadable Guide", "Review", "Interactives", "Brand Content", "Infographic", "E-Book", "Email", "Social Media Posts", "User Generated Content", "Meme", "Checklist", "Video", "Podcast", "Other"], index=0)
-        new_bizcat = st.selectbox("Business Category", ["Healthcare", "Senior Living", "Housing", "Lifestyle", "Other"], index=0)
-        new_need = st.selectbox("Consumer Need", ["Educational", "Financial Guidance", "Medical Info", "Lifestyle/Wellness", "Other"], index=0)
-        new_tone = st.selectbox("Tone of Voice", ["Professional", "Friendly", "Conversational", "Empathetic", "Other"], index=0)
-        new_audience = st.multiselect("Target Audience", TARGET_AUDIENCES, default=[])
-        st.write("#### Topic & Freeform Notes")
-        new_topic = st.text_input("Topic (Optional)")
-        new_notes_text = st.text_area("Additional Notes (optional)")
-        if "topic_suggestions" not in st.session_state:
-            st.session_state["topic_suggestions"] = []
-        if st.button("Generate 5 Topics"):
-            prompt_for_topics = f"""
-We have these details for a new article:
-- Journey Stage: {new_journey}
-- Category: {new_category}
-- Care Areas: {', '.join(new_care_areas)}
-- Format: {new_format}
-- Business Category: {new_bizcat}
-- Consumer Need: {new_need}
-- Tone of Voice: {new_tone}
-- Target Audience: {', '.join(new_audience)}
+    # Project creation form
+    project_name = st.text_input("Project Name")
+    journey_stage = st.selectbox("Consumer Journey Stage", ["Awareness", "Consideration", "Decision", "Retention", "Advocacy", "Other"])
+    category = st.selectbox("Article Category", ["Senior Living", "Health/Wellness", "Lifestyle", "Financial", "Other"])
+    care_areas = st.multiselect("Care Area(s)", ["Independent Living", "Assisted Living", "Memory Care", "Skilled Nursing"])
+    format_type = st.selectbox("Format Type", ["Blog", "Case Study", "White Paper", "Guide", "Downloadable Guide", "Review", "Interactives", "Brand Content", "Infographic", "E-Book", "Email", "Social Media Posts", "User Generated Content", "Meme", "Checklist", "Video", "Podcast", "Other"])
+    business_category = st.selectbox("Business Category", ["Healthcare", "Senior Living", "Housing", "Lifestyle", "Other"])
+    consumer_need = st.selectbox("Consumer Need", ["Educational", "Financial Guidance", "Medical Info", "Lifestyle/Wellness", "Other"])
+    tone_of_voice = st.selectbox("Tone of Voice", ["Professional", "Friendly", "Conversational", "Empathetic", "Other"])
+    target_audience = st.multiselect("Target Audience", TARGET_AUDIENCES)
+    topic = st.text_input("Topic (Required!)")
+    notes = st.text_area("Additional Notes")
 
-Suggest 5 potential article topics.
-"""
-            with st.spinner("Generating topic suggestions..."):
-                suggestions_raw, token_usage, raw_response = query_llm_api(prompt_for_topics)
-            costs = calculate_token_costs(token_usage)
-            st.write(f"""
-**Token Usage & Costs:**
-- Input: {costs['prompt_tokens']:,} tokens (${costs['input_cost']:.4f})
-- Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
-- Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
-""")
-            if debug_mode:
-                st.write("**Raw API Response:**")
-                st.code(raw_response, language="json")
-            st.session_state["topic_suggestions"] = suggestions_raw.split("\n")
-            st.success("See suggested topics below.")
-        if st.session_state["topic_suggestions"]:
-            chosen_suggestion = st.selectbox("Choose a generated topic:", st.session_state["topic_suggestions"])
-            if st.button("Use Selected Topic"):
-                new_topic = chosen_suggestion
-                st.success(f"Topic set to: {chosen_suggestion}")
-                st.session_state["topic_suggestions"] = []
-        if st.button("Create Project"):
-            if new_name.strip():
-                final_notes_json = {
-                    "consumer_need": new_need,
-                    "tone_of_voice": new_tone,
-                    "target_audience": new_audience,
-                    "freeform_notes": new_notes_text,
-                    "topic": new_topic.strip(),
-                }
-                p_data = {
-                    "name": new_name.strip(),
-                    "care_areas": new_care_areas,
-                    "journey_stage": new_journey,
-                    "category": new_category,
-                    "format_type": new_format,
-                    "business_category": new_bizcat,
-                    "notes": json.dumps(final_notes_json),
-                }
-                new_id = db.create_project(p_data)
-                st.session_state["project_id"] = new_id
-                col1, col2 = st.columns([1, 1])
-                col1.success("Project created successfully! Please select it from the drop down menu on the left to begin working.")
-                st.rerun()
-            else:
-                st.error("Please enter a project name.")
+    # Create project button and handling
+    if st.button("Create Project"):
+        notes_json = {
+            "consumer_need": consumer_need,
+            "tone_of_voice": tone_of_voice,
+            "target_audience": target_audience,
+            "freeform_notes": notes,
+            "topic": topic
+        }
+        
+        project_data = {
+            "name": project_name,
+            "care_areas": care_areas,
+            "journey_stage": journey_stage,
+            "category": category,
+            "format_type": format_type,
+            "business_category": business_category,
+            "notes": json.dumps(notes_json)
+        }
+        
+        # Create the project and store its ID
+        project_id = db.create_project(project_data)
+        st.session_state["project_id"] = project_id
+        st.session_state["show_project_success"] = True
+        st.rerun()
+
+    # Only reset the success flag when a different project is selected
+    if st.session_state.get("project_id") and not st.session_state.get("show_project_success", False):
+        st.session_state["show_project_success"] = False
 
 # --------------------------------------------------------------------
 # 2) Manage Keywords (SEMrush)
@@ -449,6 +360,7 @@ STRUCTURE:
 - Create exactly {number_of_sections} sections
 - Each section must start with "## " followed by a descriptive title
 - Maintain consistent depth and detail across all sections
+- If there is any missing information, please infer it from context and proceed with generation
 
 CONTEXT:
 Topic: {topic_in_notes}
@@ -593,30 +505,70 @@ Return ONLY a JSON object with this structure:
                     st.session_state["refine_instructions_by_article"] = {}
                 st.session_state["refine_instructions_by_article"][article_id] = new_refine_instructions
 
-            if new_refine_instructions:
-                col1, col2, col3 = st.columns([3, 2, 2])
-                if col2.button("Refine Article", use_container_width=True):
-                    with st.spinner("Refining article..."):
-                        refined_text, token_usage, raw_response = query_llm_api(
-                            f"Refine the article according to these instructions: {new_refine_instructions}"
-                        )
-                        st.session_state["drafts_by_article"][article_id] = refined_text
-                        st.success("Article refined.")
-                if col3.button("Fix Format", use_container_width=True):
-                    with st.spinner("Fixing format..."):
-                        current_draft = st.session_state["drafts_by_article"].get(article_id, "")
-                        fix_format_prompt = f"""Please reformat the following JSON so that it is properly formatted. Remove any extra characters or markdown formatting, and return only the valid JSON object in the following structure:
-{{
-    "article_content": "The complete article with section markers",
-    "section_titles": ["Title 1", "Title 2", ...]
-}}
+            # Create columns for buttons
+            col1, col2 = st.columns([1, 1])
 
-JSON to fix:
-{current_draft}
+            # Check if there's article content
+            article_content = st.session_state.get("drafts_by_article", {}).get(article_id, "")
+            if article_content:
+                # Always display Refine button if there's article content
+                if col1.button("Refine Article"):
+                    with st.spinner("Refining article..."):
+                        if new_refine_instructions:
+                            refine_prompt = f"""
+Refine the following article according to these instructions:
+
+INSTRUCTIONS:
+{new_refine_instructions}
+
+ORIGINAL ARTICLE:
+{article_content}
+
+Return the complete refined article with all improvements applied.
 """
-                        fixed_text, token_usage, raw_response = query_llm_api(fix_format_prompt)
+                            refined_text, token_usage, raw_response = query_llm_api(refine_prompt)
+                            st.session_state["drafts_by_article"][article_id] = refined_text
+                            st.success("Article refined.")
+                        else:
+                            st.warning("Please enter refine instructions before clicking 'Refine Article'.")
+
+                # Always display Fix Format button if there's article content
+                if col2.button("Fix Article Format"):
+                    with st.spinner("Fixing article format..."):
+                        # Use a simple prompt to fix markdown formatting
+                        fix_prompt = """
+Fix any markdown formatting issues in the following article. Ensure:
+1. Headers use ## and ### format properly
+2. Lists are properly formatted
+3. No excessive line breaks
+4. Consistent spacing and indentation
+5. Preserve all content and links
+
+Article:
+""" + article_content
+                        
+                        fixed_text, token_usage, raw_response = query_llm_api(fix_prompt)
+                        # Update the article content in session state
                         st.session_state["drafts_by_article"][article_id] = fixed_text
+                        
+                        # Also update in the database to ensure changes persist
+                        try:
+                            article_row = db.get_article_content(article_id)
+                            if article_row:
+                                db.save_article_content(
+                                    project_id=st.session_state["project_id"],
+                                    article_title=article_row.get("article_title", ""),
+                                    article_content=fixed_text,
+                                    article_schema=None,
+                                    meta_title=article_row.get("meta_title", ""),
+                                    meta_description=article_row.get("meta_description", ""),
+                                    article_id=article_id
+                                )
+                        except Exception as e:
+                            st.error(f"Error saving formatted article: {str(e)}")
+                            
                         st.success("Article format fixed.")
+                        st.rerun()  # Force a rerun to show the updated content
 
 # --------------------------------------------------------------------
 # 5) Save/Update Final Article (Auto-Saved)
@@ -627,61 +579,92 @@ if st.session_state["project_id"]:
         if not article_id:
             st.info("No article selected. Generate or select one first.")
         else:
-            draft_text = st.session_state["drafts_by_article"].get(article_id, "")
             article_db_row = db.get_article_content(article_id)
-            existing_title = ""
-            existing_meta_title = ""
-            existing_meta_desc = ""
             if article_db_row:
                 existing_title = article_db_row["article_title"] or ""
                 existing_meta_title = article_db_row["meta_title"] or ""
                 existing_meta_desc = article_db_row["meta_description"] or ""
-            default_meta_title = st.session_state.get("meta_title_by_article", {}).get(article_id, "") or existing_meta_title
-            default_meta_desc = st.session_state.get("meta_desc_by_article", {}).get(article_id, "") or existing_meta_desc
-            st.write("### Article Title")
-            updated_article_title = st.text_input("Give your article a clear title", key="final_title", value=existing_title, on_change=autosave_final_article)
-            final_text = st.text_area("Final Article", key="final_article", value=draft_text, height=300, on_change=autosave_final_article)
-            if st.button("Generate Meta Content"):
-                generated_title, generated_desc = generate_meta_content(st.session_state.get("final_article", ""))
-                if generated_title and generated_desc:
-                    st.session_state["final_meta_title"] = generated_title
-                    st.session_state["final_meta_desc"] = generated_desc
-                    st.success("Meta content generated!")
-                else:
-                    st.error("Failed to generate meta content.")
-            meta_title = st.text_area(
-                "Meta Title",
-                value=st.session_state.get("final_meta_title", ""),
-                key="final_meta_title",
-                height=100,
-            )
-            meta_desc = st.text_area(
-                "Meta Description",
-                value=st.session_state.get("final_meta_desc", ""),
-                key="final_meta_desc",
-                height=100,
-            )
-            col1, col2 = st.columns([1, 1])
-            if col1.button("Update Final Article"):
-                final_notes_json = {
-                    "consumer_need": existing_notes.get("consumer_need", ""),
-                    "tone_of_voice": existing_notes.get("tone_of_voice", ""),
-                    "target_audience": existing_notes.get("target_audience", []),
-                    "freeform_notes": existing_notes.get("freeform_notes", ""),
-                    "topic": existing_notes.get("topic", ""),
-                }
-                patch = {
-                    "name": existing_name,
-                    "care_areas": existing_care_areas,
-                    "journey_stage": existing_journey,
-                    "category": existing_category,
-                    "format_type": existing_format,
-                    "business_category": existing_bizcat,
-                    "notes": json.dumps(final_notes_json),
-                }
-                db.update_project_state(existing_id, patch)
-                st.success("Project updated.")
-            st.info("All changes are auto-saved as you edit.")
+                existing_content = article_db_row["article_content"] or ""
+                
+                # Update session state with database content if not already present
+                if "drafts_by_article" not in st.session_state:
+                    st.session_state["drafts_by_article"] = {}
+                if article_id not in st.session_state["drafts_by_article"]:
+                    st.session_state["drafts_by_article"][article_id] = existing_content
+
+                st.write("### Article Title")
+                updated_article_title = st.text_input(
+                    "Give your article a clear title", 
+                    key="final_title", 
+                    value=existing_title, 
+                    on_change=autosave_final_article
+                )
+
+                st.write("### Article Content")
+                updated_article_content = st.text_area(
+                    "Edit your article content",
+                    value=st.session_state["drafts_by_article"][article_id],
+                    key="final_article",
+                    height=500,
+                    on_change=autosave_final_article
+                )
+
+                meta_title = st.text_area(
+                    "Meta Title",
+                    value=existing_meta_title,
+                    key="final_meta_title",
+                    height=100,
+                    on_change=autosave_final_article
+                )
+
+                meta_desc = st.text_area(
+                    "Meta Description",
+                    value=existing_meta_desc,
+                    key="final_meta_desc",
+                    height=100,
+                    on_change=autosave_final_article
+                )
+
+                if st.button("Generate Meta Content"):
+                    with st.spinner("Generating meta content..."):
+                        article_id = st.session_state.get("article_id")
+                        article_content = st.session_state.get("final_article", "")
+                        article_title = st.session_state.get("final_title", "")
+                        
+                        success = article_service.generate_article_meta_content(
+                            project_id=st.session_state["project_id"],
+                            article_id=article_id,
+                            article_content=article_content,
+                            article_title=article_title
+                        )
+                        
+                        if success:
+                            st.success("Meta content generated and saved!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to generate meta content.")
+
+                col1, col2 = st.columns([1, 1])
+                if col1.button("Update Final Article"):
+                    final_notes_json = {
+                        "consumer_need": consumer_need,
+                        "tone_of_voice": tone_of_voice,
+                        "target_audience": target_audience,
+                        "freeform_notes": notes,
+                        "topic": topic
+                    }
+                    patch = {
+                        "name": project_name,
+                        "care_areas": care_areas,
+                        "journey_stage": journey_stage,
+                        "category": category,
+                        "format_type": format_type,
+                        "business_category": business_category,
+                        "notes": json.dumps(final_notes_json),
+                    }
+                    db.update_project_state(st.session_state["project_id"], patch)
+                    st.success("Project updated successfully!")
+                st.info("All changes are auto-saved as you edit.")
 
 # --------------------------------------------------------------------
 # 6) View Saved Article
