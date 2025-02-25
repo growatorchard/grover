@@ -6,3 +6,5 @@ community_details.db
 .DS_Store
 t.txt
 senior_living.db
+
+__pycache__/
