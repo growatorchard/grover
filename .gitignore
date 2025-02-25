@@ -7,4 +7,4 @@ community_details.db
 t.txt
 senior_living.db
 
-__pycache__/
+*__pycache__/
