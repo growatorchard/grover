@@ -265,7 +265,20 @@ if st.session_state["project_id"]:
                     for idx, rk in enumerate(related_kws):
                         col1, col2 = st.columns([8, 1])
                         intent_value = rk.get("In", "N/A")
-                        intent_desc = intent_map.get(intent_value, "N/A")
+                        
+                        # Handle multiple intents
+                        if intent_value and "," in intent_value:
+                            # Split multiple intents and map each one
+                            intent_values = intent_value.split(",")
+                            intent_descriptions = []
+                            for val in intent_values:
+                                val = val.strip()
+                                intent_descriptions.append(intent_map.get(val, "Unknown"))
+                            intent_desc = ", ".join(intent_descriptions)
+                        else:
+                            # Handle single intent as before
+                            intent_desc = intent_map.get(intent_value, "N/A")
+                            
                         col1.write(f"- {rk.get('Ph', 'N/A')} (Vol={rk.get('Nq', 'N/A')}, Diff={rk.get('Kd', 'N/A')}, Intent={intent_desc})")
                         if col2.button("➕", key=f"add_rel_{rk.get('Ph', '')}_{idx}"):
                             db.add_keyword(

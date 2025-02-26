@@ -118,6 +118,7 @@ def query_semrush_api(keyword, database="us", debug_mode=False):
             st.error(f"SEMrush API error: {str(e)}")
         return {"overview": None, "related_keywords": [], "error": str(e)}
 
+# In services/semrush_service.py, format_keyword_report function
 def format_keyword_report(keyword_data):
     """Format keyword data into a readable report."""
     if not keyword_data or keyword_data.get("error"):
@@ -145,9 +146,18 @@ def format_keyword_report(keyword_data):
         lines.append(f"- Volume: {main.get('Nq', 'N/A')}")
         lines.append(f"- Difficulty: {main.get('Kd', 'N/A')}")
         
-        # Get intent with full description for main keyword
+        # Handle potentially multiple intents for main keyword
         intent_value = main.get("In", "N/A")
-        intent_desc = intent_map.get(intent_value, "N/A")
+        if intent_value and "," in intent_value:
+            intent_values = intent_value.split(",")
+            intent_descriptions = []
+            for val in intent_values:
+                val = val.strip()
+                intent_descriptions.append(intent_map.get(val, "Unknown"))
+            intent_desc = ", ".join(intent_descriptions)
+        else:
+            intent_desc = intent_map.get(intent_value, "N/A")
+            
         lines.append(f"- Intent: {intent_desc}")
         lines.append("")
     
@@ -155,9 +165,18 @@ def format_keyword_report(keyword_data):
     if related:
         lines.append("**Related Keywords**:")
         for rk in related:
-            # Get short intent for related keywords
+            # Handle potentially multiple intents for related keywords
             intent_value = rk.get("In", "N/A")
-            intent_desc = short_intent_map.get(intent_value, "N/A")
+            if intent_value and "," in intent_value:
+                intent_values = intent_value.split(",")
+                intent_descriptions = []
+                for val in intent_values:
+                    val = val.strip()
+                    intent_descriptions.append(short_intent_map.get(val, "Unknown"))
+                intent_desc = ", ".join(intent_descriptions)
+            else:
+                intent_desc = short_intent_map.get(intent_value, "N/A")
+                
             lines.append(f" - {rk.get('Ph', 'N/A')} (Vol={rk.get('Nq', 'N/A')}, Diff={rk.get('Kd', 'N/A')}, Intent={intent_desc})")
     
     return "\n".join(lines)
