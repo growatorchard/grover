@@ -23,12 +23,12 @@ def build_semrush_url(api_type, phrase, api_key, database="us", export_columns="
 def parse_semrush_response(response_text, debug_mode=False):
     """Parse the semicolon-delimited response from SEMrush API."""
     lines = response_text.strip().split("\n")
+    
     if len(lines) <= 1:
         return []
     
-    headers = lines[0].split(";")
+    headers = [h.strip() for h in lines[0].split(";")]
     result = []
-    
     for i in range(1, len(lines)):
         values = lines[i].split(";")
         if len(values) == len(headers):
@@ -43,7 +43,7 @@ def parse_semrush_response(response_text, debug_mode=False):
                 elif header_key == "Keyword Difficulty Index":
                     item["Kd"] = values[j]
                 elif header_key == "Intent":
-                    item["In"] = values[j]
+                    item["In"] = values[j].strip()
                 else:
                     # Keep any other headers as they are
                     item[header_key] = values[j]
@@ -103,12 +103,14 @@ def query_semrush_api(keyword, database="us", debug_mode=False):
         # Process the full list as related keywords
         related_list = []
         for item in data:
+            item = {k: v.strip() for k, v in item.items()}
             related_list.append({
                 "Ph": item.get("Ph", ""),
                 "Nq": item.get("Nq", "0"),
                 "Kd": item.get("Kd", "0"),
                 "In": item.get("In", ""),
             })
+            print(related_list)
 
         return {"overview": overview_obj, "related_keywords": related_list, "error": None}
     except Exception as e:
