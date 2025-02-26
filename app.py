@@ -255,9 +255,18 @@ if st.session_state["project_id"]:
                         st.rerun()
                 if related_kws:
                     st.write("**Related Keywords**:")
+                    intent_map = {
+                        "0": "Commercial",
+                        "1": "Informational",
+                        "2": "Navigational",
+                        "3": "Transactional",
+                    }
+                    
                     for idx, rk in enumerate(related_kws):
                         col1, col2 = st.columns([8, 1])
-                        col1.write(f"- {rk.get('Ph', 'N/A')} (Vol={rk.get('Nq', 'N/A')}, Diff={rk.get('Kd', 'N/A')}, Intent={rk.get('In', 'N/A')})")
+                        intent_value = rk.get("In", "N/A")
+                        intent_desc = intent_map.get(intent_value, "N/A")
+                        col1.write(f"- {rk.get('Ph', 'N/A')} (Vol={rk.get('Nq', 'N/A')}, Diff={rk.get('Kd', 'N/A')}, Intent={intent_desc})")
                         if col2.button("➕", key=f"add_rel_{rk.get('Ph', '')}_{idx}"):
                             db.add_keyword(
                                 st.session_state["project_id"],
