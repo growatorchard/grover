@@ -40,39 +40,6 @@ state_service.initialize_session_state()
 debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
 st.session_state["selected_model"] = st.sidebar.selectbox("Select Model", list(MODEL_OPTIONS.keys()))
 
-
-# --------------------------------------------------------------------
-# Sidebar: Article Selection (only if a project is chosen)
-# --------------------------------------------------------------------
-if "article_id" not in st.session_state:
-    st.session_state["article_id"] = None
-if st.session_state["project_id"]:
-    articles, article_names = article_service.get_article_display_list(st.session_state["project_id"])
-    
-    # Find the current index for the selected article
-    selected_index = 0
-    for i, article_name in enumerate(article_names):
-        if article_name != "Create New Article" and st.session_state.get("article_id") is not None:
-            article_id = int(article_name.split("ID:")[-1].replace(")", "").strip())
-            if article_id == st.session_state["article_id"]:
-                selected_index = i
-                break
-    
-    selected_article_str = st.sidebar.selectbox(
-        "Select Article (within Project)", 
-        article_names,
-        index=selected_index
-    )
-    
-    article_service.handle_article_selection(selected_article_str)
-    
-    if st.session_state["article_id"]:
-        if st.sidebar.button("Delete Article"):
-            db.delete_article_content(st.session_state["article_id"])
-            st.success("Article content deleted.")
-            st.session_state["article_id"] = None
-            st.rerun()
-
 # --------------------------------------------------------------------
 # Sidebar: Project Selection
 # --------------------------------------------------------------------
@@ -117,6 +84,39 @@ if st.sidebar.button("Delete Project"):
     db.delete_project(st.session_state["project_id"])
     st.session_state["pending_project_selection"] = None
     st.rerun()
+
+
+# --------------------------------------------------------------------
+# Sidebar: Article Selection (only if a project is chosen)
+# --------------------------------------------------------------------
+if "article_id" not in st.session_state:
+    st.session_state["article_id"] = None
+if st.session_state["project_id"]:
+    articles, article_names = article_service.get_article_display_list(st.session_state["project_id"])
+    
+    # Find the current index for the selected article
+    selected_index = 0
+    for i, article_name in enumerate(article_names):
+        if article_name != "Create New Article" and st.session_state.get("article_id") is not None:
+            article_id = int(article_name.split("ID:")[-1].replace(")", "").strip())
+            if article_id == st.session_state["article_id"]:
+                selected_index = i
+                break
+    
+    selected_article_str = st.sidebar.selectbox(
+        "Select Article (within Project)", 
+        article_names,
+        index=selected_index
+    )
+    
+    article_service.handle_article_selection(selected_article_str)
+    
+    if st.session_state["article_id"]:
+        if st.sidebar.button("Delete Article"):
+            db.delete_article_content(st.session_state["article_id"])
+            st.success("Article content deleted.")
+            st.session_state["article_id"] = None
+            st.rerun()
 
 
 # --------------------------------------------------------------------
