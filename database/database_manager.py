@@ -26,6 +26,9 @@ class DatabaseManager:
                 category TEXT,
                 format_type TEXT,
                 business_category TEXT,
+                consumer_need TEXT,
+                tone_of_voice TEXT,
+                target_audiences JSON NOT NULL,
                 notes TEXT,
                 is_base_project BOOLEAN DEFAULT TRUE,
                 is_duplicate BOOLEAN DEFAULT FALSE,
@@ -79,13 +82,16 @@ class DatabaseManager:
                 category,
                 format_type,
                 business_category,
+                consumer_need,
+                tone_of_voice,
+                target_audiences,
                 notes,
                 is_base_project,
                 is_duplicate,
                 original_project_id,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_data["name"],
@@ -94,6 +100,9 @@ class DatabaseManager:
                 project_data["category"],
                 project_data["format_type"],
                 project_data["business_category"],
+                project_data["consumer_need"],
+                project_data["tone_of_voice"],
+                json.dumps(project_data["target_audiences"]),
                 project_data.get("notes", ""),
                 project_data.get("is_base_project", True),
                 project_data.get("is_duplicate", False),
@@ -131,6 +140,9 @@ class DatabaseManager:
                     category = ?,
                     format_type = ?,
                     business_category = ?,
+                    consumer_need = ?,
+                    tone_of_voice = ?,
+                    target_audiences = ?,
                     notes = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
@@ -142,6 +154,9 @@ class DatabaseManager:
                     state_data.get("category"),
                     state_data.get("format_type"),
                     state_data.get("business_category"),
+                    state_data.get("consumer_need"),
+                    state_data.get("tone_of_voice"),
+                    json.dumps(state_data.get("target_audiences", [])),
                     state_data.get("notes"),
                     project_id,
                 ),

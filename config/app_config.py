@@ -14,30 +14,3 @@ class AppConfig:
         "project_id": None,
         "article_id": None
     }
-
-    TARGET_AUDIENCES = [
-        "Adult Children",
-        "Seniors",
-        "Healthcare Professionals",
-        "Family Caregivers"
-    ]
-
-    MODEL_OPTIONS = {
-        "ChatGPT (o1)": "o1-mini"
-    }
-
-    CARE_AREAS = [
-        "Independent Living",
-        "Assisted Living", 
-        "Memory Care",
-        "Skilled Nursing"
-    ]
-
-    JOURNEY_STAGES = [
-        "Awareness",
-        "Consideration", 
-        "Decision",
-        "Retention",
-        "Advocacy",
-        "Other"
-    ] 

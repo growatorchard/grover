@@ -1,24 +1,19 @@
-import os
-import sqlite3
 import json
-import requests
 import streamlit as st
 from datetime import datetime
-from urllib.parse import urlparse
-from bs4 import BeautifulSoup
-import re
 from dotenv import load_dotenv
 import pyperclip
-from config.settings import TARGET_AUDIENCES
+from config.settings import TARGET_AUDIENCES, MODEL_OPTIONS, CARE_AREAS, JOURNEY_STAGES, ARTICLE_CATEGORIES, FORMAT_TYPES, BUSINESS_CATEGORIES, CONSUMER_NEEDS, TONE_OF_VOICE
 from database.database_manager import DatabaseManager
 from database.community_manager import CommunityManager
 from services.llm_service import query_chatgpt_api, query_llm_api, generate_meta_content
 from services.semrush_service import get_keyword_suggestions, format_keyword_report
-from services.scraping_service import scrape_website
 from utils.token_calculator import calculate_token_costs
 from utils.json_cleaner import clean_json_response, extract_article_content
 from services.community_service import get_care_area_details
 from services.article_service import ArticleService
+from services.state_service import StateService
+from services.project_service import ProjectService
 
 load_dotenv()  # This loads environment variables from .env
 
@@ -30,43 +25,8 @@ comm_manager = CommunityManager()
 if "show_project_success" not in st.session_state:
     st.session_state["show_project_success"] = False
 
-def autosave_final_article():
-    """Automatically save article content to database when changes are made."""
-    article_id = st.session_state.get("article_id")
-    project_id = st.session_state.get("project_id")
-    
-    if article_id and project_id:
-        updated_title = st.session_state.get("final_title", "")
-        updated_text = st.session_state.get("final_article", "")
-        updated_meta_title = st.session_state.get("final_meta_title", "")
-        updated_meta_desc = st.session_state.get("final_meta_desc", "")
-        
-        try:
-            saved_id = db.save_article_content(
-                project_id=project_id,
-                article_title=updated_title or "Auto-Generated Title",
-                article_content=updated_text,
-                article_schema=None,
-                meta_title=updated_meta_title,
-                meta_description=updated_meta_desc,
-                article_id=article_id,
-            )
-            st.session_state["article_id"] = saved_id
-            
-            # Update the drafts in session state
-            if "drafts_by_article" not in st.session_state:
-                st.session_state["drafts_by_article"] = {}
-            st.session_state["drafts_by_article"][article_id] = updated_text
-            
-        except Exception as e:
-            st.error(f"Error saving article: {str(e)}")
-
 st.set_page_config(page_title="Grover (LLM's + SEMrush)", layout="wide")
 st.title("Grover: LLM Based, with SEMrush Keyword Research")
-
-from services.state_service import StateService
-from services.project_service import ProjectService
-from config.app_config import AppConfig
 
 # Initialize services
 state_service = StateService()
@@ -82,28 +42,58 @@ state_service.initialize_session_state()
 # Sidebar: LLM Model Selector
 # --------------------------------------------------------------------
 debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
-model_options = {"ChatGPT (o1)": "o1-mini"}
-st.session_state["selected_model"] = st.sidebar.selectbox("Select Model", list(model_options.keys()))
+st.session_state["selected_model"] = st.sidebar.selectbox("Select Model", list(MODEL_OPTIONS.keys()))
 
 # --------------------------------------------------------------------
 # Sidebar: Project Selection
 # --------------------------------------------------------------------
-projects = db.get_all_projects()
-project_names = ["Create New Project"] + [f"{p['name']} (ID: {p['id']})" for p in projects]
-selected_project_str = st.sidebar.selectbox("Select Project", project_names)
-if "project_id" not in st.session_state:
-    st.session_state["project_id"] = None
-if selected_project_str == "Create New Project":
+# 1) Create a boolean flag to indicate that a new project was just created
+if "just_created_project" not in st.session_state:
+    st.session_state["just_created_project"] = False
+
+# Build project_names
+project_names = ["Create New Project"]
+project_list = db.get_all_projects()
+if project_list:
+    project_names += [f"{p['name']} (ID: {p['id']})" for p in project_list]
+
+# Use a helper function to find the label
+def find_project_label(pid):
+    for p in project_list:
+        if p["id"] == pid:
+            return f"{p['name']} (ID: {p['id']})"
+    return "Create New Project"
+
+# 2) Figure out which project should be *initially* selected
+default_index = 0  # fallback is "Create New Project"
+
+# ONLY force the default_index if we just created a project
+if st.session_state["just_created_project"]:
+    label_for_pid = find_project_label(st.session_state["project_id"])
+    if label_for_pid in project_names:
+        default_index = project_names.index(label_for_pid)
+    # After we set this once, we turn the flag off so the user can freely select next time
+    st.session_state["just_created_project"] = False
+    # Notice: we *do not* keep forcing the same default_index on subsequent runs
+
+project_select_label = st.sidebar.selectbox(
+    "Select Project",
+    project_names,
+    index=default_index
+)
+
+# 3) Update `project_id` if the user picks something new
+if project_select_label == "Create New Project":
     st.session_state["project_id"] = None
 else:
-    proj_id = int(selected_project_str.split("ID:")[-1].replace(")", "").strip())
-    if st.session_state["project_id"] != proj_id:
-        st.session_state["project_id"] = proj_id
-if st.session_state["project_id"]:
-    if st.sidebar.button("Delete Project"):
-        db.delete_project(st.session_state["project_id"])
-        st.session_state["project_id"] = None
-        st.rerun()
+    proj_id = int(
+        project_select_label.split("ID:")[-1].replace(")", "").strip()
+    )
+    st.session_state["project_id"] = proj_id
+
+# Now the user will NOT have to click twice, because:
+# - Right after creation, we do forcibly set the default once
+# - On subsequent runs, if the user chooses something else, we won't force `default_index` again
 
 # --------------------------------------------------------------------
 # Sidebar: Article Selection (only if a project is chosen)
@@ -137,56 +127,152 @@ if st.session_state["project_id"]:
             st.session_state["article_id"] = None
             st.rerun()
 
+
+
 # --------------------------------------------------------------------
 # 1) Create / Update Project
 # --------------------------------------------------------------------
-with st.expander("1) Create or Update Project", expanded=(st.session_state["project_id"] is None)):
-    # Show success message if flag is set
-    if st.session_state.get("show_project_success", False):
-        st.success("Project created successfully! You may select this project from the 'Select Project' dropdown on the top left.")
+if st.session_state["project_id"] is None:
+    with st.expander("1) Create Project", expanded=True):
 
-    # Project creation form
-    project_name = st.text_input("Project Name")
-    journey_stage = st.selectbox("Consumer Journey Stage", ["Awareness", "Consideration", "Decision", "Retention", "Advocacy", "Other"])
-    category = st.selectbox("Article Category", ["Senior Living", "Health/Wellness", "Lifestyle", "Financial", "Other"])
-    care_areas = st.multiselect("Care Area(s)", ["Independent Living", "Assisted Living", "Memory Care", "Skilled Nursing"])
-    format_type = st.selectbox("Format Type", ["Blog", "Case Study", "White Paper", "Guide", "Downloadable Guide", "Review", "Interactives", "Brand Content", "Infographic", "E-Book", "Email", "Social Media Posts", "User Generated Content", "Meme", "Checklist", "Video", "Podcast", "Other"])
-    business_category = st.selectbox("Business Category", ["Healthcare", "Senior Living", "Housing", "Lifestyle", "Other"])
-    consumer_need = st.selectbox("Consumer Need", ["Educational", "Financial Guidance", "Medical Info", "Lifestyle/Wellness", "Other"])
-    tone_of_voice = st.selectbox("Tone of Voice", ["Professional", "Friendly", "Conversational", "Empathetic", "Other"])
-    target_audience = st.multiselect("Target Audience", TARGET_AUDIENCES)
-    topic = st.text_input("Topic (Required!)")
-    notes = st.text_area("Additional Notes")
+        # Show success message if flag is set
+        if st.session_state.get("show_project_success", False):
+            st.success("Project created successfully! You may select this project from the 'Select Project' dropdown on the top left.")
 
-    # Create project button and handling
-    if st.button("Create Project"):
-        notes_json = {
-            "consumer_need": consumer_need,
-            "tone_of_voice": tone_of_voice,
-            "target_audience": target_audience,
-            "freeform_notes": notes,
-            "topic": topic
-        }
+        # Project creation form
+        project_name = st.text_input("Project Name")
+        journey_stage = st.selectbox("Consumer Journey Stage", JOURNEY_STAGES)
+        category = st.selectbox("Article Category", ARTICLE_CATEGORIES)
+        care_areas = st.multiselect("Care Area(s)", CARE_AREAS)
+        format_type = st.selectbox("Format Type", FORMAT_TYPES)
+        business_category = st.selectbox("Business Category", BUSINESS_CATEGORIES)
+        consumer_need = st.selectbox("Consumer Need", CONSUMER_NEEDS)
+        tone_of_voice = st.selectbox("Tone of Voice", TONE_OF_VOICE)
+        target_audiences = st.multiselect("Target Audience(s)", TARGET_AUDIENCES)
+        topic = st.text_input("Topic (Required!)")
+        notes = st.text_area("Additional Notes")
+
+        # Create project button and handling
+        if st.button("Create Project"):
+            notes_json = {
+                "freeform_notes": notes,
+                "topic": topic
+            }
+            
+            project_data = {
+                "name": project_name,
+                "care_areas": care_areas,
+                "journey_stage": journey_stage,
+                "category": category,
+                "format_type": format_type,
+                "consumer_need": consumer_need,
+                "tone_of_voice": tone_of_voice,
+                "target_audiences": target_audiences,
+                "business_category": business_category,
+                "notes": json.dumps(notes_json)
+            }
+            
+            # Create the project and store its ID
+            project_id = db.create_project(project_data)
+            if project_id:
+                st.session_state["project_id"] = project_id
+                st.session_state["show_project_success"] = True
+                st.session_state["just_created_project"] = True
+                st.rerun()
+
+        # Only reset the success flag when a different project is selected
+        if st.session_state.get("project_id") and not st.session_state.get("show_project_success", False):
+            st.session_state["show_project_success"] = False
+    
+else:
+    with st.expander("1) Update Project", expanded=False):
+
+        selected_project = db.get_project(st.session_state["project_id"])
+        selected_project_name = selected_project["name"]
+        selected_journey_stage = selected_project["journey_stage"]
+        selected_category = selected_project["category"]
+        selected_care_areas = json.loads(selected_project["care_areas"])
+        selected_consumer_need = selected_project["consumer_need"]
+        selected_tone_of_voice = selected_project["tone_of_voice"]
+        selected_target_audiences = json.loads(selected_project["target_audiences"])
+        selected_format_type = selected_project["format_type"]
+        selected_business_category = selected_project["business_category"]
+        selected_notes = json.loads(selected_project["notes"])
+
+        # Project creation form
+        project_name = st.text_input("Project Name", value=selected_project_name)
+        journey_stage = st.selectbox("Consumer Journey Stage", JOURNEY_STAGES, index=JOURNEY_STAGES.index(selected_journey_stage))
+        category = st.selectbox("Article Category", ARTICLE_CATEGORIES, index=ARTICLE_CATEGORIES.index(selected_category))
+        care_areas = st.multiselect("Care Area(s)", CARE_AREAS, default=selected_care_areas)
+        format_type = st.selectbox("Format Type", FORMAT_TYPES, index=FORMAT_TYPES.index(selected_format_type))
+        business_category = st.selectbox("Business Category", BUSINESS_CATEGORIES)
+        consumer_need = st.selectbox("Consumer Need", CONSUMER_NEEDS, index=CONSUMER_NEEDS.index(selected_consumer_need))
+        tone_of_voice = st.selectbox("Tone of Voice", TONE_OF_VOICE, index=TONE_OF_VOICE.index(selected_tone_of_voice))
+        target_audiences = st.multiselect("Target Audience(s)", TARGET_AUDIENCES, default=selected_target_audiences)
+        topic = st.text_input("Topic (Required!)")
+        notes = st.text_area("Additional Notes")
+
+        # Create project button and handling
+        if st.button("Update Project"):
+            notes_json = {
+                "freeform_notes": notes,
+                "topic": topic
+            }
+            
+            project_data = {
+                "name": project_name,
+                "care_areas": care_areas,
+                "journey_stage": journey_stage,
+                "category": category,
+                "format_type": format_type,
+                "business_category": business_category,
+                "consumer_need": consumer_need,
+                "tone_of_voice": tone_of_voice,
+                "target_audiences": target_audiences,
+                "notes": json.dumps(notes_json)
+            }
+            
+            # Create the project and store its ID
+            project_id = db.create_project(project_data)
+            st.session_state["project_id"] = project_id
+            st.session_state["show_project_success"] = True
+            st.rerun()
+
+        # Only reset the success flag when a different project is selected
+        if st.session_state.get("project_id") and not st.session_state.get("show_project_success", False):
+            st.session_state["show_project_success"] = False
+
+
+def autosave_final_article():
+    """Automatically save article content to database when changes are made."""
+    article_id = st.session_state.get("article_id")
+    project_id = st.session_state.get("project_id")
+    
+    if article_id and project_id:
+        updated_title = st.session_state.get("final_title", "")
+        updated_text = st.session_state.get("final_article", "")
+        updated_meta_title = st.session_state.get("final_meta_title", "")
+        updated_meta_desc = st.session_state.get("final_meta_desc", "")
         
-        project_data = {
-            "name": project_name,
-            "care_areas": care_areas,
-            "journey_stage": journey_stage,
-            "category": category,
-            "format_type": format_type,
-            "business_category": business_category,
-            "notes": json.dumps(notes_json)
-        }
-        
-        # Create the project and store its ID
-        project_id = db.create_project(project_data)
-        st.session_state["project_id"] = project_id
-        st.session_state["show_project_success"] = True
-        st.rerun()
-
-    # Only reset the success flag when a different project is selected
-    if st.session_state.get("project_id") and not st.session_state.get("show_project_success", False):
-        st.session_state["show_project_success"] = False
+        try:
+            saved_id = db.save_article_content(
+                project_id=project_id,
+                article_title=updated_title or "Auto-Generated Title",
+                article_content=updated_text,
+                article_schema=None,
+                meta_title=updated_meta_title,
+                meta_description=updated_meta_desc,
+                article_id=article_id,
+            )
+            st.session_state["article_id"] = saved_id
+            
+            # Update the drafts in session state
+            if "drafts_by_article" not in st.session_state:
+                st.session_state["drafts_by_article"] = {}
+            st.session_state["drafts_by_article"][article_id] = updated_text
+            
+        except Exception as e:
+            st.error(f"Error saving article: {str(e)}")
 
 # --------------------------------------------------------------------
 # 2) Manage Keywords (SEMrush)
