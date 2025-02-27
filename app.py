@@ -136,14 +136,9 @@ if st.session_state["project_id"] is None:
         tone_of_voice = st.selectbox("Tone of Voice", TONE_OF_VOICE)
         target_audiences = st.multiselect("Target Audience(s)", TARGET_AUDIENCES)
         topic = st.text_input("Topic (Required!)")
-        notes = st.text_area("Additional Notes")
 
         # Create project button and handling
         if st.button("Create Project"):
-            notes_json = {
-                "freeform_notes": notes,
-                "topic": topic
-            }
             
             project_data = {
                 "name": project_name,
@@ -155,7 +150,7 @@ if st.session_state["project_id"] is None:
                 "tone_of_voice": tone_of_voice,
                 "target_audiences": target_audiences,
                 "business_category": business_category,
-                "notes": json.dumps(notes_json)
+                "topic": topic,
             }
             
             new_id = db.create_project(project_data)
@@ -177,7 +172,7 @@ else:
         selected_target_audiences = json.loads(selected_project["target_audiences"])
         selected_format_type = selected_project["format_type"]
         selected_business_category = selected_project["business_category"]
-        selected_notes = json.loads(selected_project["notes"])
+        selected_topic = selected_project["topic"]
         selected_project_id = selected_project["id"]
 
         # Project creation form
@@ -190,16 +185,10 @@ else:
         consumer_need = st.selectbox("Consumer Need", CONSUMER_NEEDS, index=CONSUMER_NEEDS.index(selected_consumer_need))
         tone_of_voice = st.selectbox("Tone of Voice", TONE_OF_VOICE, index=TONE_OF_VOICE.index(selected_tone_of_voice))
         target_audiences = st.multiselect("Target Audience(s)", TARGET_AUDIENCES, default=selected_target_audiences)
-        topic = st.text_input("Topic (Required!)")
-        notes = st.text_area("Additional Notes")
+        topic = st.text_input("Topic (Required!)", value=selected_topic)
 
         # Create project button and handling
         if st.button("Update Project"):
-            notes_json = {
-                "freeform_notes": notes,
-                "topic": topic
-            }
-            
             project_data = {
                 "name": project_name,
                 "care_areas": care_areas,
@@ -210,7 +199,7 @@ else:
                 "consumer_need": consumer_need,
                 "tone_of_voice": tone_of_voice,
                 "target_audiences": target_audiences,
-                "notes": json.dumps(notes_json)
+                "topic": topic,
             }
 
             updated_id = db.update_project_state(selected_project_id, project_data)
@@ -218,37 +207,6 @@ else:
                 # Set the pending selection instead of directly updating project_selector
                 st.session_state["pending_project_selection"] = updated_id
                 st.rerun()
-
-def autosave_final_article():
-    """Automatically save article content to database when changes are made."""
-    article_id = st.session_state.get("article_id")
-    project_id = st.session_state.get("project_id")
-    
-    if article_id and project_id:
-        updated_title = st.session_state.get("final_title", "")
-        updated_text = st.session_state.get("final_article", "")
-        updated_meta_title = st.session_state.get("final_meta_title", "")
-        updated_meta_desc = st.session_state.get("final_meta_desc", "")
-        
-        try:
-            saved_id = db.save_article_content(
-                project_id=project_id,
-                article_title=updated_title or "Auto-Generated Title",
-                article_content=updated_text,
-                article_schema=None,
-                meta_title=updated_meta_title,
-                meta_description=updated_meta_desc,
-                article_id=article_id,
-            )
-            st.session_state["article_id"] = saved_id
-            
-            # Update the drafts in session state
-            if "drafts_by_article" not in st.session_state:
-                st.session_state["drafts_by_article"] = {}
-            st.session_state["drafts_by_article"][article_id] = updated_text
-            
-        except Exception as e:
-            st.error(f"Error saving article: {str(e)}")
 
 # --------------------------------------------------------------------
 # 2) Manage Keywords (SEMrush)
@@ -360,7 +318,7 @@ if st.session_state["project_id"]:
         if "article_brief" not in st.session_state:
             st.session_state["article_brief"] = ""
         st.session_state["article_brief"] = st.text_area(
-            "Enter your article brief/outlines",
+            "Enter your article brief. This will be used as additional context for the LLM. It is not required, but can be helpful.",
             value=st.session_state["article_brief"],
             height=150,
         )
@@ -660,6 +618,37 @@ Article:
                             
                         st.success("Article format fixed.")
                         st.rerun()  # Force a rerun to show the updated content
+
+def autosave_final_article():
+    """Automatically save article content to database when changes are made."""
+    article_id = st.session_state.get("article_id")
+    project_id = st.session_state.get("project_id")
+    
+    if article_id and project_id:
+        updated_title = st.session_state.get("final_title", "")
+        updated_text = st.session_state.get("final_article", "")
+        updated_meta_title = st.session_state.get("final_meta_title", "")
+        updated_meta_desc = st.session_state.get("final_meta_desc", "")
+        
+        try:
+            saved_id = db.save_article_content(
+                project_id=project_id,
+                article_title=updated_title or "Auto-Generated Title",
+                article_content=updated_text,
+                article_schema=None,
+                meta_title=updated_meta_title,
+                meta_description=updated_meta_desc,
+                article_id=article_id,
+            )
+            st.session_state["article_id"] = saved_id
+            
+            # Update the drafts in session state
+            if "drafts_by_article" not in st.session_state:
+                st.session_state["drafts_by_article"] = {}
+            st.session_state["drafts_by_article"][article_id] = updated_text
+            
+        except Exception as e:
+            st.error(f"Error saving article: {str(e)}")
 
 # --------------------------------------------------------------------
 # 5) Save/Update Final Article (Auto-Saved)
