@@ -59,6 +59,7 @@ class DatabaseManager:
             CREATE TABLE IF NOT EXISTS base_article_content (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
+                article_brief TEXT,
                 article_title TEXT NOT NULL,
                 article_content TEXT NOT NULL,
                 article_schema TEXT,
@@ -217,6 +218,7 @@ class DatabaseManager:
                         """
                         UPDATE base_article_content
                         SET
+                            article_brief = ?,
                             article_title = ?,
                             article_content = ?,
                             article_schema = ?,
@@ -242,11 +244,11 @@ class DatabaseManager:
                     cursor.execute(
                         """
                         INSERT INTO base_article_content (
-                            project_id, article_title, article_content, article_schema,
+                            project_id, article_brief, article_title, article_content, article_schema,
                             meta_title, meta_description,
                             created_at, updated_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         """,
                         (
                             project_id,
