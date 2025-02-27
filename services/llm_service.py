@@ -22,6 +22,8 @@ def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[
         messages.extend(conversation_history)
     messages.append({"role": "user", "content": message})
     payload = {"model": "o1-mini", "messages": messages, "max_completion_tokens": 20000}
+    # print entire prompt/message
+    print(json.dumps(payload, indent=2))
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=240)
         response.raise_for_status()

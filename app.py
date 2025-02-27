@@ -376,19 +376,26 @@ ADDITIONAL CONTEXT:
 {community_details_text}
 """
             full_article_prompt = f"""
-Generate a comprehensive article that MUST be AT LEAST {desired_article_length} words (this is a strict minimum).
+Generate a comprehensive article, the article MUST be AT LEAST {desired_article_length} words (this is a strict minimum).
 
 STRUCTURE:
 - Create exactly {number_of_sections} sections
-- Each section must start with "## " followed by a descriptive title
-- Maintain consistent depth and detail across all sections
+- Please use a markdown format when creating the article. This article should be formatted perfectly.
+- Maintain consistent depth and detail across all sections. The goal is to create an SEO optimized article that is engaging and informative.
 - If there is any missing information, please infer it from context and proceed with generation
 
 CONTEXT:
 Topic: {topic_in_notes}
-Keywords to Include: {kw_str}
-Target Audience: {', '.join(target_audience)}
-Tone: {tone_of_voice}
+Project Brief: {brief_text}
+Keywords to Include (must be used): {kw_str}
+1. Journey Stage: {journey_stage}
+2. Category: {category}
+3. Care Areas: {', '.join(care_areas_list)}
+4. Format Type: {format_type}
+5. Business Category: {business_cat}
+6. Consumer Need: {consumer_need}
+7. Tone of Voice: {tone_of_voice}
+8. Target Audience: {', '.join(target_audience)}
 
 Return ONLY a JSON object with this structure:
 {{
@@ -732,6 +739,8 @@ if st.session_state.get("project_id") and st.session_state.get("article_id"):
                     alias_list = [alias["alias"] for alias in aliases] if aliases else []
                     aliases_text = ", ".join(alias_list) if alias_list else "None"
                     care_area_details_text = get_care_area_details(comm_manager, rev_comm_id)
+                    # print community details
+                    print(dict(community))
                     community_details_text = f"""
 COMMUNITY DETAILS:
 - Name: {community["community_name"]}
@@ -747,6 +756,7 @@ ORIGINAL ARTICLE CONTEXT:
 - Article Type: {article_row['article_title']}
 - Project Details: {json.loads(db.get_project(st.session_state["project_id"])['notes'])}
 
+
 ORIGINAL ARTICLE:
 {original_article}
 
@@ -759,6 +769,7 @@ COMMUNITY DETAILS:
 REVISION REQUIREMENTS:
 1. Incorporate community-specific details naturally throughout the article
 2. Include relevant internal links to optimize keyword SEO; include each link a maximum of once in the article. YOU MAY NOT USE EACH LINK MORE THAN ONCE EVER
+   - Home Page: {community["community_primary_domain"]}
    - About Page: {community["about_page"]}
    - Contact Page: {community["contact_page"]}
    - Floor Plan Page: {community["floor_plan_page"]}
