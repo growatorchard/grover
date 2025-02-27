@@ -21,10 +21,6 @@ load_dotenv()  # This loads environment variables from .env
 db = DatabaseManager()
 comm_manager = CommunityManager()
 
-# Add this near the top of the file with other session state initializations
-if "show_project_success" not in st.session_state:
-    st.session_state["show_project_success"] = False
-
 st.set_page_config(page_title="Grover (LLM's + SEMrush)", layout="wide")
 st.title("Grover: LLM Based, with SEMrush Keyword Research")
 
@@ -44,56 +40,6 @@ state_service.initialize_session_state()
 debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
 st.session_state["selected_model"] = st.sidebar.selectbox("Select Model", list(MODEL_OPTIONS.keys()))
 
-# --------------------------------------------------------------------
-# Sidebar: Project Selection
-# --------------------------------------------------------------------
-# 1) Create a boolean flag to indicate that a new project was just created
-if "just_created_project" not in st.session_state:
-    st.session_state["just_created_project"] = False
-
-# Build project_names
-project_names = ["Create New Project"]
-project_list = db.get_all_projects()
-if project_list:
-    project_names += [f"{p['name']} (ID: {p['id']})" for p in project_list]
-
-# Use a helper function to find the label
-def find_project_label(pid):
-    for p in project_list:
-        if p["id"] == pid:
-            return f"{p['name']} (ID: {p['id']})"
-    return "Create New Project"
-
-# 2) Figure out which project should be *initially* selected
-default_index = 0  # fallback is "Create New Project"
-
-# ONLY force the default_index if we just created a project
-if st.session_state["just_created_project"]:
-    label_for_pid = find_project_label(st.session_state["project_id"])
-    if label_for_pid in project_names:
-        default_index = project_names.index(label_for_pid)
-    # After we set this once, we turn the flag off so the user can freely select next time
-    st.session_state["just_created_project"] = False
-    # Notice: we *do not* keep forcing the same default_index on subsequent runs
-
-project_select_label = st.sidebar.selectbox(
-    "Select Project",
-    project_names,
-    index=default_index
-)
-
-# 3) Update `project_id` if the user picks something new
-if project_select_label == "Create New Project":
-    st.session_state["project_id"] = None
-else:
-    proj_id = int(
-        project_select_label.split("ID:")[-1].replace(")", "").strip()
-    )
-    st.session_state["project_id"] = proj_id
-
-# Now the user will NOT have to click twice, because:
-# - Right after creation, we do forcibly set the default once
-# - On subsequent runs, if the user chooses something else, we won't force `default_index` again
 
 # --------------------------------------------------------------------
 # Sidebar: Article Selection (only if a project is chosen)
@@ -127,6 +73,50 @@ if st.session_state["project_id"]:
             st.session_state["article_id"] = None
             st.rerun()
 
+# --------------------------------------------------------------------
+# Sidebar: Project Selection
+# --------------------------------------------------------------------
+# Initialize at the top of your script
+if "pending_project_selection" not in st.session_state:
+    st.session_state["pending_project_selection"] = None
+
+# Check if we need to update the selection during initialization
+if st.session_state.get("pending_project_selection") is not None:
+    # This runs at the start of each page load
+    project_id = st.session_state["pending_project_selection"]
+    # Clear the pending selection
+    st.session_state["pending_project_selection"] = None
+    # Set the project ID
+    st.session_state["project_id"] = project_id
+    # Pre-select the dropdown - this is the key part!
+    st.session_state["project_selector"] = project_id
+
+# Your regular selectbox code
+project_list = db.get_all_projects()
+project_id_options = [None] + [p["id"] for p in project_list]
+
+def format_project(project_id):
+    if project_id is None:
+        return "Create New Project"
+    for p in project_list:
+        if p["id"] == project_id:
+            return f"{p['name']} (ID: {p['id']})"
+    return "Unknown Project"
+
+selected_project_id = st.sidebar.selectbox(
+    "Select Project",
+    project_id_options,
+    format_func=format_project,
+    key="project_selector"
+)
+
+# Update tracking variables based on widget selection
+st.session_state["project_id"] = selected_project_id
+
+if st.sidebar.button("Delete Project"):
+    db.delete_project(st.session_state["project_id"])
+    st.session_state["pending_project_selection"] = None
+    st.rerun()
 
 
 # --------------------------------------------------------------------
@@ -134,10 +124,6 @@ if st.session_state["project_id"]:
 # --------------------------------------------------------------------
 if st.session_state["project_id"] is None:
     with st.expander("1) Create Project", expanded=True):
-
-        # Show success message if flag is set
-        if st.session_state.get("show_project_success", False):
-            st.success("Project created successfully! You may select this project from the 'Select Project' dropdown on the top left.")
 
         # Project creation form
         project_name = st.text_input("Project Name")
@@ -172,17 +158,11 @@ if st.session_state["project_id"] is None:
                 "notes": json.dumps(notes_json)
             }
             
-            # Create the project and store its ID
-            project_id = db.create_project(project_data)
-            if project_id:
-                st.session_state["project_id"] = project_id
-                st.session_state["show_project_success"] = True
-                st.session_state["just_created_project"] = True
+            new_id = db.create_project(project_data)
+            if new_id:
+                # Set the pending selection instead of directly updating project_selector
+                st.session_state["pending_project_selection"] = new_id
                 st.rerun()
-
-        # Only reset the success flag when a different project is selected
-        if st.session_state.get("project_id") and not st.session_state.get("show_project_success", False):
-            st.session_state["show_project_success"] = False
     
 else:
     with st.expander("1) Update Project", expanded=False):
@@ -198,6 +178,7 @@ else:
         selected_format_type = selected_project["format_type"]
         selected_business_category = selected_project["business_category"]
         selected_notes = json.loads(selected_project["notes"])
+        selected_project_id = selected_project["id"]
 
         # Project creation form
         project_name = st.text_input("Project Name", value=selected_project_name)
@@ -231,17 +212,12 @@ else:
                 "target_audiences": target_audiences,
                 "notes": json.dumps(notes_json)
             }
-            
-            # Create the project and store its ID
-            project_id = db.create_project(project_data)
-            st.session_state["project_id"] = project_id
-            st.session_state["show_project_success"] = True
-            st.rerun()
 
-        # Only reset the success flag when a different project is selected
-        if st.session_state.get("project_id") and not st.session_state.get("show_project_success", False):
-            st.session_state["show_project_success"] = False
-
+            updated_id = db.update_project_state(selected_project_id, project_data)
+            if updated_id:
+                # Set the pending selection instead of directly updating project_selector
+                st.session_state["pending_project_selection"] = updated_id
+                st.rerun()
 
 def autosave_final_article():
     """Automatically save article content to database when changes are made."""
