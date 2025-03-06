@@ -18,7 +18,6 @@ load_dotenv()  # Load environment variables from .env file
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY')
-import json
 
 # Custom Jinja filters
 @app.template_filter('from_json')
@@ -169,10 +168,13 @@ def delete_project():
 @app.route('/keywords/list')
 def list_keywords():
     project_id = session.get('project_id')
+    print(project_id)
     if not project_id:
         return jsonify([])
     
     keywords = db.get_project_keywords(project_id)
+    keywords = [dict(k) for k in keywords] if keywords else []
+
     return jsonify(keywords)
 
 @app.route('/keywords/add', methods=['POST'])

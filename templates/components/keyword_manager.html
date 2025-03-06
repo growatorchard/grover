@@ -48,21 +48,33 @@
             <button type="submit" class="btn btn-primary">Research</button>
         </form>
         
-        <div id="semrush-results-container" class="mt-4" style="display: none;">
+        <div id="semrush-results-container" class="mt-4">
             <h5>SEMrush Results</h5>
             
+            <!-- Loading indicator -->
+            <div id="semrush-loading" style="display: none;">
+                <div class="d-flex justify-content-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Error message container -->
             <div id="semrush-error" class="alert alert-danger" style="display: none;"></div>
             
+            <!-- Main keyword container -->
             <div id="semrush-main-keyword-container" class="mb-3" style="display: none;">
                 <h6>Main Keyword</h6>
                 <div class="d-flex align-items-center">
                     <div class="flex-grow-1" id="semrush-main-keyword-info"></div>
                     <button type="button" class="btn btn-sm btn-success add-main-keyword">
-                        <i class="bi bi-plus"></i>
+                        <i class="bi bi-plus"></i> Add
                     </button>
                 </div>
             </div>
             
+            <!-- Related keywords container -->
             <div id="semrush-related-keywords-container" style="display: none;">
                 <h6>Related Keywords</h6>
                 <ul class="list-group" id="semrush-related-keywords-list"></ul>
@@ -72,8 +84,14 @@
 </div>
 
 <script>
-// Load existing keywords on page load
-$(document).ready(function() {
+document.addEventListener('DOMContentLoaded', function() {
+    // Ensure jQuery is loaded
+    if (typeof $ === 'undefined') {
+        console.error('jQuery is not loaded. Please make sure it is included before this script.');
+        return;
+    }
+    
+    // Load existing keywords on page load
     loadExistingKeywords();
     
     // Add keywords form submission
@@ -113,8 +131,12 @@ $(document).ready(function() {
             return;
         }
         
-        // Show loading indicator
-        $('#semrush-results-container').html('<div class="d-flex justify-content-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>').show();
+        // Hide previous results and show loading indicator
+        $('#semrush-error').hide();
+        $('#semrush-main-keyword-container').hide();
+        $('#semrush-related-keywords-container').hide();
+        $('#semrush-loading').show();
+        $('#semrush-results-container').show();
         
         // Make AJAX request to research endpoint
         $.ajax({
@@ -122,10 +144,13 @@ $(document).ready(function() {
             method: 'POST',
             data: { keyword: keyword },
             success: function(response) {
+                $('#semrush-loading').hide();
                 displaySemrushResults(response);
+                console.log('SEMrush response:', response);
             },
             error: function(xhr) {
-                $('#semrush-results-container').html(`<div class="alert alert-danger">Error: ${xhr.responseText}</div>`);
+                $('#semrush-loading').hide();
+                $('#semrush-error').text('Error: ' + (xhr.responseText || 'Failed to research keyword')).show();
             }
         });
     });
@@ -138,12 +163,16 @@ $(document).ready(function() {
     
     $(document).on('click', '.add-main-keyword', function() {
         const keywordData = $('#semrush-main-keyword-info').data('keyword');
-        saveKeyword(keywordData.Ph, keywordData.Nq, keywordData.Kd);
+        if (keywordData) {
+            saveKeyword(keywordData.Ph, keywordData.Nq, keywordData.Kd);
+        }
     });
     
     $(document).on('click', '.add-related-keyword', function() {
         const keywordData = $(this).data('keyword');
-        saveKeyword(keywordData.Ph, keywordData.Nq, keywordData.Kd);
+        if (keywordData) {
+            saveKeyword(keywordData.Ph, keywordData.Nq, keywordData.Kd);
+        }
     });
 });
 
@@ -218,11 +247,6 @@ function deleteKeyword(keywordId) {
 }
 
 function displaySemrushResults(data) {
-    // Clear previous results containers
-    $('#semrush-error').hide();
-    $('#semrush-main-keyword-container').hide();
-    $('#semrush-related-keywords-container').hide();
-    
     // Check for errors
     if (data.error) {
         $('#semrush-error').text(data.error).show();
@@ -233,7 +257,8 @@ function displaySemrushResults(data) {
     const mainKeyword = data.main_keyword;
     if (mainKeyword) {
         const mainKeywordInfo = `<strong>${mainKeyword.Ph || 'N/A'}</strong> (Volume=${mainKeyword.Nq || 'N/A'}, Diff=${mainKeyword.Kd || 'N/A'})`;
-        $('#semrush-main-keyword-info').html(mainKeywordInfo).data('keyword', mainKeyword);
+        $('#semrush-main-keyword-info').html(mainKeywordInfo);
+        $('#semrush-main-keyword-info').data('keyword', mainKeyword);
         $('#semrush-main-keyword-container').show();
     }
     
@@ -261,13 +286,16 @@ function displaySemrushResults(data) {
                 }
             }
             
+            // Stringify the keyword data and escape quotes
+            const keywordJson = JSON.stringify(rk).replace(/"/g, '&quot;');
+            
             html += `
             <li class="list-group-item d-flex justify-content-between align-items-center">
                 <div>
                     <strong>${rk.Ph || 'N/A'}</strong> (Vol=${rk.Nq || 'N/A'}, Diff=${rk.Kd || 'N/A'}, Intent=${intentDesc})
                 </div>
-                <button type="button" class="btn btn-sm btn-success add-related-keyword" data-keyword='${JSON.stringify(rk)}'>
-                    <i class="bi bi-plus"></i>
+                <button type="button" class="btn btn-sm btn-success add-related-keyword" data-keyword='${keywordJson}'>
+                    <i class="bi bi-plus"></i> Add
                 </button>
             </li>`;
         });
@@ -275,8 +303,5 @@ function displaySemrushResults(data) {
         $('#semrush-related-keywords-list').html(html);
         $('#semrush-related-keywords-container').show();
     }
-    
-    // Show results container
-    $('#semrush-results-container').show();
 }
 </script>
