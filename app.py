@@ -311,76 +311,135 @@ if st.session_state["project_id"]:
                             st.rerun()
 
 # --------------------------------------------------------------------
-# 3) Article Brief
+# 3) Article Create/Select
 # --------------------------------------------------------------------
-if st.session_state["project_id"]:
-    with st.expander("3) Article Brief"):
-        if "article_brief" not in st.session_state:
-            st.session_state["article_brief"] = ""
-        st.session_state["article_brief"] = st.text_area(
-            "Enter your article brief. This will be used as additional context for the LLM. It is not required, but can be helpful.",
-            value=st.session_state["article_brief"],
-            height=150,
-        )
-        if st.button("Save Brief"):
-            st.success("Brief saved (in session).")
 
-# --------------------------------------------------------------------
-# 4) Generate & Refine Article (LLM)
-# --------------------------------------------------------------------
 if st.session_state["project_id"]:
+    if "is_creating_article_settings" not in st.session_state:
+        st.session_state["is_creating_article_settings"] = False
+    if "is_editing_article" not in st.session_state:
+        st.session_state["is_editing_article"] = False
+
+    with st.expander("3) Create/Select Article"):
+        if "articles_by_project" not in st.session_state:
+            st.session_state["articles_by_project"] = {}
+        if st.session_state["project_id"] not in st.session_state["articles_by_project"]:
+            st.session_state["articles_by_project"][st.session_state["project_id"]] = db.get_all_articles_for_project(st.session_state["project_id"])
+        articles = st.session_state["articles_by_project"][st.session_state["project_id"]]
+        if articles:
+            st.write("### Existing Articles")
+            for art in articles:
+                col1, col2, col3 = st.columns([8, 1, 3])
+                col1.write(
+                    f"- **{art['article_title']}** (ID={art['id']})"
+                )
+                if col2.button("X", key=f"artdel_{art['id']}"):
+                    db.delete_article_content(art["id"])
+                    st.rerun()
+                if col3.button("Edit/Generate", key=f"artedit_{art['id']}"):
+                    st.session_state["article_id"] = art["id"]
+                    st.session_state["is_creating_article_settings"] = True
+                    st.session_state["is_editing_article"] = True
+                    st.rerun()
+
+        # create a button to create a new article
+        if st.button("Create New Article"):
+            st.session_state["is_creating_article_settings"] = True
+            st.rerun()
+
+if st.session_state["project_id"] is not None and st.session_state.get("is_creating_article_settings", True):
+    if st.session_state.get("is_editing_article", False):
+        with st.form("article_settings_form"):
+            article_brief = st.text_area("Article Brief")
+            desired_article_length = st.number_input(
+                "Desired total word count for the article",
+                min_value=200,
+                max_value=20000,
+                value=1000,
+                step=100,
+            )
+            number_of_sections = st.number_input(
+                "Number of sections",
+                min_value=1,
+                max_value=20,
+                value=5,
+                step=1,
+            )
+            
+            submit_button = st.form_submit_button("Save Settings")
+            
+            if submit_button:
+                st.write("Form submitted!")
+                try:
+                    new_article_id = db.create_article_content(
+                        project_id=st.session_state["project_id"],
+                        article_brief=article_brief,
+                        article_length=desired_article_length,
+                        article_sections=number_of_sections,
+                    )
+                    st.success(f"Article settings saved with ID: {new_article_id}")
+                except Exception as e:
+                    st.error(f"Failed to save article settings: {e}")
+    else:
+        with st.form("article_settings_form"):
+            print(f"article_id: {st.session_state.get('article_id')}")
+            article_settings = db.get_article_content(st.session_state["article_id"])
+            print(f"article_settings: {article_settings}")
+            article_brief = st.text_area("Article Brief", value=article_settings["article_brief"])
+            print(f"article_brief: {article_brief}")
+            desired_article_length = st.number_input(
+                "Desired total word count for the article",
+                min_value=200,
+                max_value=20000,
+                value=article_settings["article_length"],
+                step=100,
+            )
+            number_of_sections = st.number_input(
+                "Number of sections",
+                min_value=1,
+                max_value=20,
+                value=article_settings["article_sections"],
+                step=1,
+            )
+            submit_button = st.form_submit_button("Save Settings")
+            if submit_button:
+                st.write("Form submitted!")
+                try:
+                    new_article_id = db.update_article_content(
+                        article_id=st.session_state["article_id"],
+                        article_brief=article_brief,
+                        article_length=desired_article_length,
+                        article_sections=number_of_sections,
+                    )
+                    st.success(f"Article settings saved with ID: {new_article_id}")
+                except Exception as e:
+                    st.error(f"Failed to save article settings: {e}")
+
+if st.session_state["project_id"] is not None and st.session_state.get("is_creating_article_settings", False) and st.session_state.get("is_editing_article", True):
     with st.expander("4) Generate & Refine Article (LLM)"):
-        desired_article_length = st.number_input(
-            "Desired total word count for the article",
-            min_value=200,
-            max_value=20000,
-            value=1000,
-            step=100,
-        )
-        number_of_sections = st.number_input(
-            "Number of sections",
-            min_value=1,
-            max_value=20,
-            value=5,
-            step=1,
-        )
-        new_article_name = ""
-        if not st.session_state["article_id"]:
-            new_article_name = st.text_input("New Article Name (optional)", value="")
-        if st.button("Generate Article from Brief"):
-            brief_text = st.session_state.get("article_brief", "")
+        if st.button("Generate Article Title & Outline"):
             db_kws = db.get_project_keywords(st.session_state["project_id"])
             keywords = [k["keyword"] for k in db_kws] if db_kws else []
             kw_str = ", ".join(keywords) if keywords else "(none)"
             pinfo = db.get_project(st.session_state["project_id"])
-            project_notes = {}
+            article_brief = pinfo["article_brief"]
             if pinfo:
-                pinfo_dict = dict(pinfo)
-                try:
-                    project_notes = json.loads(pinfo_dict.get("notes", "{}"))
-                except Exception:
-                    project_notes = {}
-                journey_stage = pinfo_dict.get("journey_stage", "")
-                category = pinfo_dict.get("category", "")
-                care_areas_list = json.loads(pinfo_dict.get("care_areas", "[]"))
-                format_type = pinfo_dict.get("format_type", "")
-                business_cat = pinfo_dict.get("business_category", "")
-                consumer_need = project_notes.get("consumer_need", "")
-                tone_of_voice = project_notes.get("tone_of_voice", "")
-                target_audience = project_notes.get("target_audience", [])
-                freeform_notes = project_notes.get("freeform_notes", "")
-                topic_in_notes = project_notes.get("topic", "").strip()
+                journey_stage = pinfo["journey_stage"]
+                category = pinfo["category"]
+                care_areas_list = json.loads(pinfo["care_areas"])
+                format_type = pinfo["format_type"]
+                business_cat = pinfo["business_category"]
+                consumer_need = pinfo["consumer_need"]
+                tone_of_voice = pinfo["tone_of_voice"]
+                target_audiences = json.loads(pinfo["target_audiences"])
+                topic = pinfo["topic"]
+
             community_details_text = ""
             context_msg = f"""
-MAIN TOPIC: {topic_in_notes}
-
-PROJECT BRIEF:
-{brief_text}
-
+MAIN TOPIC: {topic}
 REQUIRED KEYWORDS (must be used):
 {kw_str}
-
-PROJECT SPECIFICATIONS:
+ARTICLE SPECIFICATIONS:
 1. Journey Stage: {journey_stage}
 2. Category: {category}
 3. Care Areas: {', '.join(care_areas_list)}
@@ -388,236 +447,342 @@ PROJECT SPECIFICATIONS:
 5. Business Category: {business_cat}
 6. Consumer Need: {consumer_need}
 7. Tone of Voice: {tone_of_voice}
-8. Target Audience: {', '.join(target_audience)}
-
+8. Target Audiences: {', '.join(target_audiences)}
 ADDITIONAL CONTEXT:
-{freeform_notes}
 
 {community_details_text}
 """
             full_article_prompt = f"""
-Generate a comprehensive article, the article MUST be AT LEAST {desired_article_length} words (this is a strict minimum).
-
-STRUCTURE:
-- Create exactly {number_of_sections} sections
-- Please use a markdown format when creating the article. This article should be formatted perfectly.
-- Maintain consistent depth and detail across all sections. The goal is to create an SEO optimized article that is engaging and informative.
-- If there is any missing information, please infer it from context and proceed with generation
-
-CONTEXT:
-Topic: {topic_in_notes}
-Project Brief: {brief_text}
-Keywords to Include (must be used): {kw_str}
-1. Journey Stage: {journey_stage}
-2. Category: {category}
-3. Care Areas: {', '.join(care_areas_list)}
-4. Format Type: {format_type}
-5. Business Category: {business_cat}
-6. Consumer Need: {consumer_need}
-7. Tone of Voice: {tone_of_voice}
-8. Target Audience: {', '.join(target_audience)}
-
+Generate a comprehensive article title and outline based on the following information:
+ARTICLE BRIEF:
+{context_msg}
 Return ONLY a JSON object with this structure:
 {{
-    "article_content": "The complete article with section markers",
-    "section_titles": ["Title 1", "Title 2", ...],
+    "article_outline": "H1/Title, H2, H3, etc.",
 }}
 """
-            max_iterations = 5
-            iteration = 1
-            final_response = None
-            while iteration <= max_iterations:
-                with st.spinner(f"Generating full article (Iteration {iteration}/{max_iterations})..."):
-                    response, token_usage, raw_response = query_llm_api(full_article_prompt)
-                    st.session_state["token_usage_history"].append({
-                        "iteration": iteration,
-                        "timestamp": datetime.now().strftime("%H:%M:%S"),
-                        "usage": token_usage,
-                    })
-                    costs = calculate_token_costs(token_usage)
-                    st.write(f"""
+            response, token_usage, raw_response = query_llm_api(full_article_prompt)
+            st.session_state["token_usage_history"].append({
+                "iteration": 1,
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
+                "usage": token_usage,
+            })
+            costs = calculate_token_costs(token_usage)
+            st.write(f"""
 **Token Usage & Costs:**
 - Input: {costs['prompt_tokens']:,} tokens (${costs['input_cost']:.4f})
 - Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
 - Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
 """)
-                    if debug_mode:
-                        st.write("**Raw API Response:**")
-                        st.code(raw_response, language="json")
-                try:
-                    article_text = clean_json_response(response)
-                    word_count = len(article_text.split())
-                    if word_count == 0:
-                        st.warning("Generated article appears to be empty. Retrying...")
-                        iteration = 1
-                        continue
-                    if word_count >= desired_article_length:
-                        final_response = {"article_content": article_text, "section_titles": []}
-                        break
-                    else:
-                        additional_needed = desired_article_length - word_count
-                        st.info(f"Article only has {word_count} words. {additional_needed} more words needed. Retrying iteration {iteration + 1}...")
-                        full_article_prompt = f"""
-IMPORTANT: The previous article was {word_count} words, which is BELOW the required {desired_article_length} words.
+            if debug_mode:
+                st.write("**Raw API Response:**")
+                st.code(raw_response, language="json")
+            try:
+                article_title = clean_json_response(response).get("article_title", "")
+                article_outline = clean_json_response(response).get("article_outline", "")
+                st.session_state["article_brief"] = article_outline
+                st.session_state["article_title"] = article_title
+                st.session_state["article_outline"] = article_outline
+                st.success(f"Article Title: {article_title}")
+                st.success(f"Article Outline: {article_outline}")
+            except Exception as e:
+                st.error("Failed to parse article JSON: " + str(e))
+                if not response.strip() or len(response.strip().split()) == 0:
+                    st.warning("Empty response received. Restarting generation process...")
 
-Add approximately {additional_needed} more words to reach the minimum requirement while maintaining quality and relevance.
+# --------------------------------------------------------------------
+# 4) Generate & Refine Article (LLM)
+# --------------------------------------------------------------------
+# if st.session_state["project_id"]:
+#     with st.expander("4) Generate & Refine Article (LLM)"):
+#         desired_article_length = st.number_input(
+#             "Desired total word count for the article",
+#             min_value=200,
+#             max_value=20000,
+#             value=1000,
+#             step=100,
+#         )
+#         number_of_sections = st.number_input(
+#             "Number of sections",
+#             min_value=1,
+#             max_value=20,
+#             value=5,
+#             step=1,
+#         )
+#         new_article_name = ""
+#         if not st.session_state["article_id"]:
+#             new_article_name = st.text_input("New Article Name (optional)", value="")
+#         if st.button("Generate Article from Brief"):
+#             brief_text = st.session_state.get("article_brief", "")
+#             db_kws = db.get_project_keywords(st.session_state["project_id"])
+#             keywords = [k["keyword"] for k in db_kws] if db_kws else []
+#             kw_str = ", ".join(keywords) if keywords else "(none)"
+#             pinfo = db.get_project(st.session_state["project_id"])
+#             project_notes = {}
+#             if pinfo:
+#                 pinfo_dict = dict(pinfo)
+#                 try:
+#                     project_notes = json.loads(pinfo_dict.get("notes", "{}"))
+#                 except Exception:
+#                     project_notes = {}
+#                 journey_stage = pinfo_dict.get("journey_stage", "")
+#                 category = pinfo_dict.get("category", "")
+#                 care_areas_list = json.loads(pinfo_dict.get("care_areas", "[]"))
+#                 format_type = pinfo_dict.get("format_type", "")
+#                 business_cat = pinfo_dict.get("business_category", "")
+#                 consumer_need = project_notes.get("consumer_need", "")
+#                 tone_of_voice = project_notes.get("tone_of_voice", "")
+#                 target_audience = project_notes.get("target_audience", [])
+#                 freeform_notes = project_notes.get("freeform_notes", "")
+#                 topic_in_notes = project_notes.get("topic", "").strip()
+#             community_details_text = ""
+#             context_msg = f"""
+# MAIN TOPIC: {topic_in_notes}
 
-Previous content:
-{article_text}
+# PROJECT BRIEF:
+# {brief_text}
 
-Return the complete expanded article in the same JSON format as before.
-"""
-                        iteration += 1
-                except Exception as e:
-                    st.error("Failed to parse article JSON: " + str(e))
-                    if not response.strip() or len(response.strip().split()) == 0:
-                        st.warning("Empty response received. Restarting generation process...")
-                        iteration = 1
-                        full_article_prompt = f"""
-Generate a comprehensive article that MUST be AT LEAST {desired_article_length} words (this is a strict minimum).
+# REQUIRED KEYWORDS (must be used):
+# {kw_str}
 
-STRUCTURE:
-- Create exactly {number_of_sections} sections
-- Each section must start with "## " followed by a descriptive title
-- Maintain consistent depth and detail across all sections
+# PROJECT SPECIFICATIONS:
+# 1. Journey Stage: {journey_stage}
+# 2. Category: {category}
+# 3. Care Areas: {', '.join(care_areas_list)}
+# 4. Format Type: {format_type}
+# 5. Business Category: {business_cat}
+# 6. Consumer Need: {consumer_need}
+# 7. Tone of Voice: {tone_of_voice}
+# 8. Target Audience: {', '.join(target_audience)}
 
-CONTEXT:
-Topic: {topic_in_notes}
-Keywords to Include: {kw_str}
-Target Audience: {', '.join(target_audience)}
-Tone: {tone_of_voice}
+# ADDITIONAL CONTEXT:
+# {freeform_notes}
 
-Return ONLY a JSON object with this structure:
-{{
-    "article_content": "The complete article with section markers",
-    "section_titles": ["Title 1", "Title 2", ...],
-}}
-"""
-                        continue
-            if final_response is not None:
-                full_article = final_response.get("article_content", "")
-                meta_title = final_response.get("meta_title", "")
-                meta_desc = final_response.get("meta_description", "")
-                section_titles = final_response.get("section_titles", [])
-                total_words = len(full_article.split())
-            else:
-                full_article = response
-                meta_title = ""
-                meta_desc = ""
-                section_titles = []
-                total_words = len(full_article.split())
-            if not st.session_state["article_id"]:
-                final_title = new_article_name.strip() if new_article_name.strip() else "(Generated Draft)"
-                new_art_id = db.save_article_content(
-                    project_id=st.session_state["project_id"],
-                    article_title=final_title,
-                    article_content=full_article,
-                    article_schema=None,
-                    meta_title=meta_title,
-                    meta_description=meta_desc,
-                )
-                st.session_state["article_id"] = new_art_id
-            else:
-                new_art_id = st.session_state["article_id"]
-            if "drafts_by_article" not in st.session_state:
-                st.session_state["drafts_by_article"] = {}
-            st.session_state["drafts_by_article"][new_art_id] = full_article
-            if "meta_title_by_article" not in st.session_state:
-                st.session_state["meta_title_by_article"] = {}
-            st.session_state["meta_title_by_article"][new_art_id] = meta_title
-            if "meta_desc_by_article" not in st.session_state:
-                st.session_state["meta_desc_by_article"] = {}
-            st.session_state["meta_desc_by_article"][new_art_id] = meta_desc
-            if full_article.strip():
-                st.success(f"Article generated with {total_words} words and meta fields set in the UI!")
-            else:
-                st.warning("No complete article content generated. Check errors above.")
-        article_id = st.session_state["article_id"]
-        if not article_id:
-            st.info("No article selected/created yet. Generate an article first or create one above.")
-        else:
-            current_draft_text = st.session_state["drafts_by_article"].get(article_id, "")
-            st.write("### Current Article Draft (with numeric markers)")
-            new_draft = st.text_area("Current Article Draft", value=current_draft_text, height=300)
-            if new_draft != current_draft_text:
-                st.session_state["drafts_by_article"][article_id] = new_draft
+# {community_details_text}
+# """
+#             full_article_prompt = f"""
+# Generate a comprehensive article, the article MUST be AT LEAST {desired_article_length} words (this is a strict minimum).
 
-            # Get current refine instructions from session state
-            refine_instructions = st.session_state.get("refine_instructions_by_article", {}).get(article_id, "")
-            new_refine_instructions = st.text_area(
-                "Refine Instructions",
-                value=refine_instructions,
-                help="Enter instructions for refining the article",
-            )
-            if new_refine_instructions != refine_instructions:
-                if "refine_instructions_by_article" not in st.session_state:
-                    st.session_state["refine_instructions_by_article"] = {}
-                st.session_state["refine_instructions_by_article"][article_id] = new_refine_instructions
+# STRUCTURE:
+# - Create exactly {number_of_sections} sections
+# - Please use a markdown format when creating the article. This article should be formatted perfectly.
+# - Maintain consistent depth and detail across all sections. The goal is to create an SEO optimized article that is engaging and informative.
+# - If there is any missing information, please infer it from context and proceed with generation
 
-            # Create columns for buttons
-            col1, col2 = st.columns([1, 1])
+# CONTEXT:
+# Topic: {topic_in_notes}
+# Project Brief: {brief_text}
+# Keywords to Include (must be used): {kw_str}
+# 1. Journey Stage: {journey_stage}
+# 2. Category: {category}
+# 3. Care Areas: {', '.join(care_areas_list)}
+# 4. Format Type: {format_type}
+# 5. Business Category: {business_cat}
+# 6. Consumer Need: {consumer_need}
+# 7. Tone of Voice: {tone_of_voice}
+# 8. Target Audience: {', '.join(target_audience)}
 
-            # Check if there's article content
-            article_content = st.session_state.get("drafts_by_article", {}).get(article_id, "")
-            if article_content:
-                # Always display Refine button if there's article content
-                if col1.button("Refine Article"):
-                    with st.spinner("Refining article..."):
-                        if new_refine_instructions:
-                            refine_prompt = f"""
-Refine the following article according to these instructions:
+# Return ONLY a JSON object with this structure:
+# {{
+#     "article_content": "The complete article with section markers",
+#     "section_titles": ["Title 1", "Title 2", ...],
+# }}
+# """
+#             max_iterations = 5
+#             iteration = 1
+#             final_response = None
+#             while iteration <= max_iterations:
+#                 with st.spinner(f"Generating full article (Iteration {iteration}/{max_iterations})..."):
+#                     response, token_usage, raw_response = query_llm_api(full_article_prompt)
+#                     st.session_state["token_usage_history"].append({
+#                         "iteration": iteration,
+#                         "timestamp": datetime.now().strftime("%H:%M:%S"),
+#                         "usage": token_usage,
+#                     })
+#                     costs = calculate_token_costs(token_usage)
+#                     st.write(f"""
+# **Token Usage & Costs:**
+# - Input: {costs['prompt_tokens']:,} tokens (${costs['input_cost']:.4f})
+# - Output: {costs['completion_tokens']:,} tokens (${costs['output_cost']:.4f})
+# - Total: {costs['total_tokens']:,} tokens (${costs['total_cost']:.4f})
+# """)
+#                     if debug_mode:
+#                         st.write("**Raw API Response:**")
+#                         st.code(raw_response, language="json")
+#                 try:
+#                     article_text = clean_json_response(response)
+#                     word_count = len(article_text.split())
+#                     if word_count == 0:
+#                         st.warning("Generated article appears to be empty. Retrying...")
+#                         iteration = 1
+#                         continue
+#                     if word_count >= desired_article_length:
+#                         final_response = {"article_content": article_text, "section_titles": []}
+#                         break
+#                     else:
+#                         additional_needed = desired_article_length - word_count
+#                         st.info(f"Article only has {word_count} words. {additional_needed} more words needed. Retrying iteration {iteration + 1}...")
+#                         full_article_prompt = f"""
+# IMPORTANT: The previous article was {word_count} words, which is BELOW the required {desired_article_length} words.
 
-INSTRUCTIONS:
-{new_refine_instructions}
+# Add approximately {additional_needed} more words to reach the minimum requirement while maintaining quality and relevance.
 
-ORIGINAL ARTICLE:
-{article_content}
+# Previous content:
+# {article_text}
 
-Return the complete refined article with all improvements applied.
-"""
-                            refined_text, token_usage, raw_response = query_llm_api(refine_prompt)
-                            st.session_state["drafts_by_article"][article_id] = refined_text
-                            st.success("Article refined.")
-                        else:
-                            st.warning("Please enter refine instructions before clicking 'Refine Article'.")
+# Return the complete expanded article in the same JSON format as before.
+# """
+#                         iteration += 1
+#                 except Exception as e:
+#                     st.error("Failed to parse article JSON: " + str(e))
+#                     if not response.strip() or len(response.strip().split()) == 0:
+#                         st.warning("Empty response received. Restarting generation process...")
+#                         iteration = 1
+#                         full_article_prompt = f"""
+# Generate a comprehensive article that MUST be AT LEAST {desired_article_length} words (this is a strict minimum).
 
-                # Always display Fix Format button if there's article content
-                if col2.button("Fix Article Format"):
-                    with st.spinner("Fixing article format..."):
-                        # Use a simple prompt to fix markdown formatting
-                        fix_prompt = """
-Fix any markdown formatting issues in the following article. Ensure:
-1. Headers use ## and ### format properly
-2. Lists are properly formatted
-3. No excessive line breaks
-4. Consistent spacing and indentation
-5. Preserve all content and links
+# STRUCTURE:
+# - Create exactly {number_of_sections} sections
+# - Each section must start with "## " followed by a descriptive title
+# - Maintain consistent depth and detail across all sections
 
-Article:
-""" + article_content
+# CONTEXT:
+# Topic: {topic_in_notes}
+# Keywords to Include: {kw_str}
+# Target Audience: {', '.join(target_audience)}
+# Tone: {tone_of_voice}
+
+# Return ONLY a JSON object with this structure:
+# {{
+#     "article_content": "The complete article with section markers",
+#     "section_titles": ["Title 1", "Title 2", ...],
+# }}
+# """
+#                         continue
+#             if final_response is not None:
+#                 full_article = final_response.get("article_content", "")
+#                 meta_title = final_response.get("meta_title", "")
+#                 meta_desc = final_response.get("meta_description", "")
+#                 section_titles = final_response.get("section_titles", [])
+#                 total_words = len(full_article.split())
+#             else:
+#                 full_article = response
+#                 meta_title = ""
+#                 meta_desc = ""
+#                 section_titles = []
+#                 total_words = len(full_article.split())
+#             if not st.session_state["article_id"]:
+#                 final_title = new_article_name.strip() if new_article_name.strip() else "(Generated Draft)"
+#                 new_art_id = db.save_article_content(
+#                     project_id=st.session_state["project_id"],
+#                     article_title=final_title,
+#                     article_content=full_article,
+#                     article_schema=None,
+#                     meta_title=meta_title,
+#                     meta_description=meta_desc,
+#                 )
+#                 st.session_state["article_id"] = new_art_id
+#             else:
+#                 new_art_id = st.session_state["article_id"]
+#             if "drafts_by_article" not in st.session_state:
+#                 st.session_state["drafts_by_article"] = {}
+#             st.session_state["drafts_by_article"][new_art_id] = full_article
+#             if "meta_title_by_article" not in st.session_state:
+#                 st.session_state["meta_title_by_article"] = {}
+#             st.session_state["meta_title_by_article"][new_art_id] = meta_title
+#             if "meta_desc_by_article" not in st.session_state:
+#                 st.session_state["meta_desc_by_article"] = {}
+#             st.session_state["meta_desc_by_article"][new_art_id] = meta_desc
+#             if full_article.strip():
+#                 st.success(f"Article generated with {total_words} words and meta fields set in the UI!")
+#             else:
+#                 st.warning("No complete article content generated. Check errors above.")
+#         article_id = st.session_state["article_id"]
+#         if not article_id:
+#             st.info("No article selected/created yet. Generate an article first or create one above.")
+#         else:
+#             current_draft_text = st.session_state["drafts_by_article"].get(article_id, "")
+#             st.write("### Current Article Draft (with numeric markers)")
+#             new_draft = st.text_area("Current Article Draft", value=current_draft_text, height=300)
+#             if new_draft != current_draft_text:
+#                 st.session_state["drafts_by_article"][article_id] = new_draft
+
+#             # Get current refine instructions from session state
+#             refine_instructions = st.session_state.get("refine_instructions_by_article", {}).get(article_id, "")
+#             new_refine_instructions = st.text_area(
+#                 "Refine Instructions",
+#                 value=refine_instructions,
+#                 help="Enter instructions for refining the article",
+#             )
+#             if new_refine_instructions != refine_instructions:
+#                 if "refine_instructions_by_article" not in st.session_state:
+#                     st.session_state["refine_instructions_by_article"] = {}
+#                 st.session_state["refine_instructions_by_article"][article_id] = new_refine_instructions
+
+#             # Create columns for buttons
+#             col1, col2 = st.columns([1, 1])
+
+#             # Check if there's article content
+#             article_content = st.session_state.get("drafts_by_article", {}).get(article_id, "")
+#             if article_content:
+#                 # Always display Refine button if there's article content
+#                 if col1.button("Refine Article"):
+#                     with st.spinner("Refining article..."):
+#                         if new_refine_instructions:
+#                             refine_prompt = f"""
+# Refine the following article according to these instructions:
+
+# INSTRUCTIONS:
+# {new_refine_instructions}
+
+# ORIGINAL ARTICLE:
+# {article_content}
+
+# Return the complete refined article with all improvements applied.
+# """
+#                             refined_text, token_usage, raw_response = query_llm_api(refine_prompt)
+#                             st.session_state["drafts_by_article"][article_id] = refined_text
+#                             st.success("Article refined.")
+#                         else:
+#                             st.warning("Please enter refine instructions before clicking 'Refine Article'.")
+
+#                 # Always display Fix Format button if there's article content
+#                 if col2.button("Fix Article Format"):
+#                     with st.spinner("Fixing article format..."):
+#                         # Use a simple prompt to fix markdown formatting
+#                         fix_prompt = """
+# Fix any markdown formatting issues in the following article. Ensure:
+# 1. Headers use ## and ### format properly
+# 2. Lists are properly formatted
+# 3. No excessive line breaks
+# 4. Consistent spacing and indentation
+# 5. Preserve all content and links
+
+# Article:
+# """ + article_content
                         
-                        fixed_text, token_usage, raw_response = query_llm_api(fix_prompt)
-                        # Update the article content in session state
-                        st.session_state["drafts_by_article"][article_id] = fixed_text
+#                         fixed_text, token_usage, raw_response = query_llm_api(fix_prompt)
+#                         # Update the article content in session state
+#                         st.session_state["drafts_by_article"][article_id] = fixed_text
                         
-                        # Also update in the database to ensure changes persist
-                        try:
-                            article_row = db.get_article_content(article_id)
-                            if article_row:
-                                db.save_article_content(
-                                    project_id=st.session_state["project_id"],
-                                    article_title=article_row.get("article_title", ""),
-                                    article_content=fixed_text,
-                                    article_schema=None,
-                                    meta_title=article_row.get("meta_title", ""),
-                                    meta_description=article_row.get("meta_description", ""),
-                                    article_id=article_id
-                                )
-                        except Exception as e:
-                            st.error(f"Error saving formatted article: {str(e)}")
+#                         # Also update in the database to ensure changes persist
+#                         try:
+#                             article_row = db.get_article_content(article_id)
+#                             if article_row:
+#                                 db.save_article_content(
+#                                     project_id=st.session_state["project_id"],
+#                                     article_title=article_row.get("article_title", ""),
+#                                     article_content=fixed_text,
+#                                     article_schema=None,
+#                                     meta_title=article_row.get("meta_title", ""),
+#                                     meta_description=article_row.get("meta_description", ""),
+#                                     article_id=article_id
+#                                 )
+#                         except Exception as e:
+#                             st.error(f"Error saving formatted article: {str(e)}")
                             
-                        st.success("Article format fixed.")
-                        st.rerun()  # Force a rerun to show the updated content
+#                         st.success("Article format fixed.")
+#                         st.rerun()  # Force a rerun to show the updated content
 
 def autosave_final_article():
     """Automatically save article content to database when changes are made."""

@@ -2,6 +2,7 @@ import sqlite3
 import json
 from datetime import datetime
 
+
 class DatabaseManager:
     def __init__(self):
         self.conn = sqlite3.connect("grover.db", check_same_thread=False)
@@ -60,8 +61,10 @@ class DatabaseManager:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
                 article_brief TEXT,
-                article_title TEXT NOT NULL,
-                article_content TEXT NOT NULL,
+                article_length INTEGER,
+                article_sections INTEGER,
+                article_title TEXT,
+                article_content TEXT,
                 article_schema TEXT,
                 meta_title TEXT,
                 meta_description TEXT,
@@ -172,7 +175,9 @@ class DatabaseManager:
             cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
             return cursor.rowcount > 0
 
-    def add_keyword(self, project_id, keyword, search_volume, search_intent, keyword_difficulty):
+    def add_keyword(
+        self, project_id, keyword, search_volume, search_intent, keyword_difficulty
+    ):
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -197,11 +202,63 @@ class DatabaseManager:
             cursor.execute("DELETE FROM keywords WHERE id = ?", (keyword_id,))
             return cursor.rowcount > 0
 
+    def create_article_content(
+        self,
+        project_id,
+        article_brief=None,
+        article_length=None,
+        article_sections=None,
+        article_title=None,
+        article_content=None,
+        article_schema=None,
+        meta_title=None,
+        meta_description=None,
+    ):
+        """Create base article content with improved error handling."""
+        print("Creating article content...")
+        print(f"DBBBProject ID: {project_id}")
+        with self.get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO base_article_content (
+                        project_id, article_brief, article_length, article_sections, article_title, article_content, article_schema,
+                        meta_title, meta_description,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        project_id,
+                        article_brief,
+                        article_length,
+                        article_sections,
+                        article_title,
+                        article_content,
+                        (
+                            json.dumps(article_schema)
+                            if isinstance(article_schema, dict)
+                            else article_schema
+                        ),
+                        meta_title,
+                        meta_description,
+                    ),
+                )
+                conn.commit()
+                return cursor.lastrowid
+            except sqlite3.Error as e:
+                conn.rollback()
+                raise e
+
     def save_article_content(
         self,
         project_id,
-        article_title,
-        article_content,
+        article_brief=None,
+        article_length=None,
+        article_sections=None,
+        article_title=None,
+        article_content=None,
         article_schema=None,
         meta_title=None,
         meta_description=None,
@@ -212,13 +269,15 @@ class DatabaseManager:
             try:
                 conn.execute("BEGIN")
                 cursor = conn.cursor()
-                
+
                 if article_id:
                     cursor.execute(
                         """
                         UPDATE base_article_content
                         SET
                             article_brief = ?,
+                            article_length = ?,
+                            article_sections = ?,
                             article_title = ?,
                             article_content = ?,
                             article_schema = ?,
@@ -228,42 +287,58 @@ class DatabaseManager:
                         WHERE id = ? AND project_id = ?
                         """,
                         (
+                            article_brief,
+                            article_length,
+                            article_sections,
                             article_title,
                             article_content,
-                            json.dumps(article_schema) if isinstance(article_schema, dict) else article_schema,
+                            (
+                                json.dumps(article_schema)
+                                if isinstance(article_schema, dict)
+                                else article_schema
+                            ),
                             meta_title,
                             meta_description,
                             article_id,
-                            project_id
+                            project_id,
                         ),
                     )
                     if cursor.rowcount == 0:
-                        raise ValueError(f"No article found with ID {article_id} for project {project_id}")
+                        raise ValueError(
+                            f"No article found with ID {article_id} for project {project_id}"
+                        )
                     saved_id = article_id
                 else:
                     cursor.execute(
                         """
                         INSERT INTO base_article_content (
-                            project_id, article_brief, article_title, article_content, article_schema,
+                            project_id, article_brief, article_length, article_sections, article_title, article_content, article_schema,
                             meta_title, meta_description,
                             created_at, updated_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         """,
                         (
                             project_id,
+                            article_brief,
+                            article_length,
+                            article_sections,
                             article_title,
                             article_content,
-                            json.dumps(article_schema) if isinstance(article_schema, dict) else article_schema,
+                            (
+                                json.dumps(article_schema)
+                                if isinstance(article_schema, dict)
+                                else article_schema
+                            ),
                             meta_title,
                             meta_description,
                         ),
                     )
                     saved_id = cursor.lastrowid
-                
+
                 conn.commit()
                 return saved_id
-                
+
             except Exception as e:
                 conn.rollback()
                 raise e
@@ -285,11 +360,15 @@ class DatabaseManager:
     def get_article_content(self, article_id):
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM base_article_content WHERE id = ?", (article_id,))
+            cursor.execute(
+                "SELECT * FROM base_article_content WHERE id = ?", (article_id,)
+            )
             return cursor.fetchone()
 
     def delete_article_content(self, article_id):
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM base_article_content WHERE id = ?", (article_id,))
-            conn.commit() 
+            cursor.execute(
+                "DELETE FROM base_article_content WHERE id = ?", (article_id,)
+            )
+            conn.commit()
