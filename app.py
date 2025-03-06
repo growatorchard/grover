@@ -534,7 +534,7 @@ def save_article_title_outline():
 
 @app.route('/articles/save', methods=['POST'])
 def save_article_content():
-    """Save the article content without changing the title or metadata."""
+    """Save the article content without changing other fields."""
     project_id = session.get('project_id')
     article_id = session.get('article_id')
     if not project_id or not article_id:
@@ -546,14 +546,34 @@ def save_article_content():
         # Get current article data to preserve other fields
         article = db.get_article_content(article_id)
         
-        # Update just the content
+        # Get the values from the article object, with defaults if missing
+        try:
+            article_title = article['article_title'] if 'article_title' in article else ''
+            article_brief = article['article_brief'] if 'article_brief' in article else ''
+            article_length = article['article_length'] if 'article_length' in article else 1000
+            article_sections = article['article_sections'] if 'article_sections' in article else 5
+            meta_title = article['meta_title'] if 'meta_title' in article else ''
+            meta_description = article['meta_description'] if 'meta_description' in article else ''
+        except (TypeError, KeyError):
+            # Fallback values if article doesn't have these attributes
+            article_title = ''
+            article_brief = ''
+            article_length = 1000
+            article_sections = 5
+            meta_title = ''
+            meta_description = ''
+        
+        # Update just the content while preserving other fields
         saved_id = db.save_article_content(
             project_id=project_id,
-            article_title=article.get('article_title', ''),
+            article_title=article_title, 
+            article_brief=article_brief,
+            article_length=article_length,
+            article_sections=article_sections,
             article_content=article_content,
             article_schema=None,
-            meta_title=article.get('meta_title', ''),
-            meta_description=article.get('meta_description', ''),
+            meta_title=meta_title,
+            meta_description=meta_description,
             article_id=article_id
         )
         
@@ -575,6 +595,91 @@ def delete_article():
         session['article_id'] = None
         return jsonify({'success': True})
     return jsonify({'error': 'No article ID provided'}), 400
+
+@app.route('/articles/generate_content', methods=['POST'])
+def generate_article_content():
+    llm_model = session.get('selected_model')
+    project_id = session.get('project_id')
+    article_id = session.get('article_id')
+    if not project_id:
+        return jsonify({'error': 'No project selected'}), 400
+    
+    if not article_id:
+        return jsonify({'error': 'No article selected'}), 400
+    
+    # Get project details and keywords
+    db_kws = db.get_project_keywords(project_id)
+    keywords = [k["keyword"] for k in db_kws] if db_kws else []
+    kw_str = ", ".join(keywords) if keywords else "(none)"
+    pinfo = db.get_project(project_id)
+    ainfo = db.get_article_content(article_id)
+    
+    # Build context for LLM request
+    journey_stage = pinfo["journey_stage"]
+    category = pinfo["category"]
+    care_areas_list = json.loads(pinfo["care_areas"])
+    format_type = pinfo["format_type"]
+    business_cat = pinfo["business_category"]
+    consumer_need = pinfo["consumer_need"]
+    tone_of_voice = pinfo["tone_of_voice"]
+    target_audiences = json.loads(pinfo["target_audiences"])
+    topic = pinfo["topic"]
+
+    article_brief = ainfo["article_brief"]
+    article_desired_word_count = ainfo["article_length"]
+    article_title = ainfo["article_title"]
+    
+    context_msg = f"""
+MAIN TOPIC: {topic}
+REQUIRED KEYWORDS (must be used):
+{kw_str}
+ARTICLE SPECIFICATIONS:
+1. Journey Stage: {journey_stage}
+2. Category: {category}
+3. Care Areas: {', '.join(care_areas_list)}
+4. Format Type: {format_type}
+5. Business Category: {business_cat}
+6. Consumer Need: {consumer_need}
+7. Tone of Voice: {tone_of_voice}
+8. Target Audiences: {', '.join(target_audiences)}
+
+ARTICLE TITLE: {article_title}
+
+ARTICLE OUTLINE: {article_brief}
+
+DESIRED WORD COUNT: {article_desired_word_count}
+
+Please generate a complete article based on the above information. The article should be well-structured, informative, and engaging, with a focus on the target audience and SEO keywords provided.
+
+"""
+    
+    full_article_prompt = f"""
+Generate a complete article based on the following information:
+ARTICLE BRIEF:
+{context_msg}
+Return ONLY the article content text.
+"""
+    response, token_usage, raw_response = query_llm_api(llm_model, full_article_prompt)
+
+    # Track token usage
+    token_usage_history = session.get('token_usage_history', [])
+    token_usage_history.append({
+        "iteration": 1,
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "usage": token_usage,
+    })
+    session['token_usage_history'] = token_usage_history
+    # costs = calculate_token_costs(token_usage)
+    costs = 1
+
+    print("Response:", response)
+
+    return jsonify({
+        'article_content': response,
+        'token_usage': token_usage,
+        'costs': costs,
+        'raw_response': raw_response if session.get('debug_mode') else None
+    })
 
 @app.route('/articles/refine', methods=['POST'])
 def refine_article():

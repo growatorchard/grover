@@ -271,6 +271,29 @@ class DatabaseManager:
                 cursor = conn.cursor()
 
                 if article_id:
+                    # First, get the current values to use as defaults for NULL values
+                    cursor.execute(
+                        "SELECT * FROM base_article_content WHERE id = ?", 
+                        (article_id,)
+                    )
+                    current = cursor.fetchone()
+                    
+                    if not current:
+                        raise ValueError(
+                            f"No article found with ID {article_id} for project {project_id}"
+                        )
+                    
+                    # Use existing values for any NULL parameters
+                    article_brief = article_brief if article_brief is not None else current['article_brief']
+                    article_length = article_length if article_length is not None else current['article_length']
+                    article_sections = article_sections if article_sections is not None else current['article_sections']
+                    article_title = article_title if article_title is not None else current['article_title']
+                    article_content = article_content if article_content is not None else current['article_content']
+                    article_schema = article_schema if article_schema is not None else current['article_schema']
+                    meta_title = meta_title if meta_title is not None else current['meta_title']
+                    meta_description = meta_description if meta_description is not None else current['meta_description']
+                    
+                    # Now update with all fields populated
                     cursor.execute(
                         """
                         UPDATE base_article_content
@@ -305,10 +328,11 @@ class DatabaseManager:
                     )
                     if cursor.rowcount == 0:
                         raise ValueError(
-                            f"No article found with ID {article_id} for project {project_id}"
+                            f"Update failed for article ID {article_id} for project {project_id}"
                         )
                     saved_id = article_id
                 else:
+                    # For new articles, insert with the values provided
                     cursor.execute(
                         """
                         INSERT INTO base_article_content (
@@ -341,6 +365,7 @@ class DatabaseManager:
 
             except Exception as e:
                 conn.rollback()
+                print(f"Database error in save_article_content: {str(e)}")
                 raise e
 
     def get_all_articles_for_project(self, project_id):
