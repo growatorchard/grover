@@ -33,32 +33,21 @@
         </div>
     </div>
     
-    <!-- 3. Create/Select Article -->
+    <!-- 3. Create/Update Article Settings -->
     <div class="accordion-item">
         <h2 class="accordion-header">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#articleCreateSection" aria-expanded="false" aria-controls="articleCreateSection">
-                3) Create/Select Article
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#articleSettingsSection" aria-expanded="false" aria-controls="articleSettingsSection">
+                3) {% if not session.get('article_id') %}Create{% else %}Update{% endif %} Article Settings
             </button>
         </h2>
-        <div id="articleCreateSection" class="accordion-collapse collapse">
+        <div id="articleSettingsSection" class="accordion-collapse collapse">
             <div class="accordion-body">
-                <div id="existing-articles-container">
-                    <!-- This will be populated via AJAX -->
-                    <div class="text-center">
-                        <div class="spinner-border" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="mt-3">
-                    <button id="create-article-btn" class="btn btn-primary">Create New Article</button>
-                </div>
+                {% include 'components/article_form.html' %}
             </div>
         </div>
     </div>
-    
-    <!-- 4. Generate & Refine Article (LLM) -->
+
+    <!-- 4. Generate & Refine Article (LLM) - Only if article is selected -->
     {% if session.get('article_id') %}
     <div class="accordion-item">
         <h2 class="accordion-header">
@@ -139,20 +128,4 @@
     </div>
     {% endif %}
 </div>
-
-<!-- Modal for Article Settings -->
-<div class="modal fade" id="articleSettingsModal" tabindex="-1" aria-labelledby="articleSettingsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="articleSettingsModalLabel">Article Settings</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                {% include 'components/article_settings.html' %}
-            </div>
-        </div>
-    </div>
-</div>
-
 {% endblock %}

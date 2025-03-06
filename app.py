@@ -69,15 +69,31 @@ def index():
     projects = db.get_all_projects()
     selected_project = None
     articles = []
+    current_article = None
     
     if session.get('project_id'):
         selected_project = db.get_project(session['project_id'])
-        articles = article_service.get_article_display_list(session['project_id'])
+        
+        # Get all articles for the project
+        try:
+            articles = db.get_all_articles_for_project(session['project_id'])
+        except Exception as e:
+            app.logger.error(f"Error fetching articles: {str(e)}")
+            articles = []
+        
+        # Get the current article if one is selected
+        if session.get('article_id'):
+            try:
+                current_article = db.get_article_content(session['article_id'])
+            except Exception as e:
+                app.logger.error(f"Error fetching article: {str(e)}")
+                session['article_id'] = None
     
     return render_template('index.html', 
                           projects=projects,
                           selected_project=selected_project,
                           articles=articles,
+                          current_article=current_article,
                           models=MODEL_OPTIONS,
                           selected_model=session.get('selected_model'),
                           target_audiences=TARGET_AUDIENCES,
@@ -214,11 +230,18 @@ def research_keywords():
 @app.route('/articles/select', methods=['POST'])
 def select_article():
     article_id = request.form.get('article_id')
+    
     if article_id == 'new':
+        # Clear article selection to show the creation form
         session['article_id'] = None
-        session['is_creating_article_settings'] = True
     else:
-        session['article_id'] = int(article_id) if article_id else None
+        # Select existing article
+        try:
+            article_id = int(article_id) if article_id else None
+            session['article_id'] = article_id
+        except (ValueError, TypeError):
+            session['article_id'] = None
+    
     return redirect(url_for('index'))
 
 @app.route('/articles/create', methods=['POST'])
@@ -227,22 +250,58 @@ def create_article_settings():
     if not project_id:
         return jsonify({'error': 'No project selected'}), 400
     
-    article_brief = request.form.get('article_brief')
+    article_title = request.form.get('article_title', 'Untitled Article')
+    article_brief = request.form.get('article_brief', '')
     article_length = int(request.form.get('article_length', 1000))
     article_sections = int(request.form.get('article_sections', 5))
     
     try:
+        # Create the article content entry
         new_article_id = db.create_article_content(
             project_id=project_id,
             article_brief=article_brief,
             article_length=article_length,
             article_sections=article_sections,
+            article_title=article_title,
         )
+        
+        # Set as current article
         session['article_id'] = new_article_id
-        session['is_creating_article_settings'] = False
-        session['is_editing_article'] = True
-        return jsonify({'success': True, 'article_id': new_article_id})
+        
+        return redirect(url_for('index'))
     except Exception as e:
+        app.logger.error(f"Error creating article: {str(e)}")
+        return f"Error creating article: {str(e)}", 500
+    
+@app.route('/articles/list')
+def list_articles():
+    """Get all articles for the current project."""
+    project_id = session.get('project_id')
+    if not project_id:
+        return jsonify([])
+    
+    # ERROR in app: Error fetching articles: No item with that key
+    print(project_id)
+    
+    try:
+        articles = db.get_all_articles_for_project(project_id)
+        
+        # Format the articles for display
+        formatted_articles = []
+        for article in articles:
+            formatted_articles.append({
+                'id': article['id'],
+                'article_title': article['article_title'],
+                'article_brief': article['article_brief'],
+                'article_length': article['article_length'],
+                'article_sections': article['article_sections'],
+                'created_at': article['created_at'].isoformat() if hasattr(article['created_at'], 'isoformat') else article['created_at'],
+                'updated_at': article['updated_at'].isoformat() if hasattr(article['updated_at'], 'isoformat') else article['updated_at']
+            })
+        
+        return jsonify(formatted_articles)
+    except Exception as e:
+        app.logger.error(f"Error fetching articles: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/articles/update', methods=['POST'])
@@ -251,46 +310,95 @@ def update_article_settings():
     if not article_id:
         return jsonify({'error': 'No article selected'}), 400
     
-    article_brief = request.form.get('article_brief')
+    article_title = request.form.get('article_title', '')
+    article_brief = request.form.get('article_brief', '')
     article_length = int(request.form.get('article_length', 1000))
     article_sections = int(request.form.get('article_sections', 5))
     
     try:
+        # Update the article settings
         db.update_article_content(
             article_id=article_id,
             article_brief=article_brief,
             article_length=article_length,
             article_sections=article_sections,
         )
-        return jsonify({'success': True})
+        
+        # Update the title
+        article = db.get_article_content(article_id)
+        db.save_article_content(
+            project_id=session.get('project_id'),
+            article_title=article_title,
+            article_content=article.get('article_content', ''),
+            article_schema=None,
+            meta_title=article.get('meta_title', ''),
+            meta_description=article.get('meta_description', ''),
+            article_id=article_id
+        )
+        
+        return redirect(url_for('index'))
     except Exception as e:
+        app.logger.error(f"Error updating article: {str(e)}")
+        return f"Error updating article: {str(e)}", 500
+    
+@app.route('/articles/get_current')
+def get_current_article():
+    """Get the currently selected article."""
+    article_id = session.get('article_id')
+    if not article_id:
+        return jsonify(None)
+    
+    try:
+        article = db.get_article_content(article_id)
+        if not article:
+            return jsonify(None)
+        
+        # Convert to dict if needed and format dates
+        article_dict = dict(article)
+        if 'created_at' in article_dict and hasattr(article_dict['created_at'], 'isoformat'):
+            article_dict['created_at'] = article_dict['created_at'].isoformat()
+        if 'updated_at' in article_dict and hasattr(article_dict['updated_at'], 'isoformat'):
+            article_dict['updated_at'] = article_dict['updated_at'].isoformat()
+            
+        return jsonify(article_dict)
+    except Exception as e:
+        app.logger.error(f"Error fetching current article: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/articles/generate_title_outline', methods=['POST'])
 def generate_article_title_outline():
+    llm_model = session.get('selected_model')
     project_id = session.get('project_id')
+    article_id = session.get('article_id')
     if not project_id:
         return jsonify({'error': 'No project selected'}), 400
+    
+    if not article_id:
+        return jsonify({'error': 'No article selected'}), 400
     
     # Get project details and keywords
     db_kws = db.get_project_keywords(project_id)
     keywords = [k["keyword"] for k in db_kws] if db_kws else []
     kw_str = ", ".join(keywords) if keywords else "(none)"
     pinfo = db.get_project(project_id)
+    ainfo = db.get_article_content(article_id)
     
     # Build context for LLM request
-    article_brief = pinfo.get("article_brief", "")
-    journey_stage = pinfo.get("journey_stage", "")
-    category = pinfo.get("category", "")
-    care_areas_list = json.loads(pinfo.get("care_areas", "[]"))
-    format_type = pinfo.get("format_type", "")
-    business_cat = pinfo.get("business_category", "")
-    consumer_need = pinfo.get("consumer_need", "")
-    tone_of_voice = pinfo.get("tone_of_voice", "")
-    target_audiences = json.loads(pinfo.get("target_audiences", "[]"))
-    topic = pinfo.get("topic", "")
+    journey_stage = pinfo["journey_stage"]
+    category = pinfo["category"]
+    care_areas_list = json.loads(pinfo["care_areas"])
+    format_type = pinfo["format_type"]
+    business_cat = pinfo["business_category"]
+    consumer_need = pinfo["consumer_need"]
+    tone_of_voice = pinfo["tone_of_voice"]
+    target_audiences = json.loads(pinfo["target_audiences"])
+    topic = pinfo["topic"]
+
+    article_brief = ainfo["article_brief"]
+    article_desired_word_count = ainfo["article_length"]
+    article_desired_sections = ainfo["article_sections"]
     
-    community_details_text = ""
+    
     context_msg = f"""
 MAIN TOPIC: {topic}
 REQUIRED KEYWORDS (must be used):
@@ -304,10 +412,13 @@ ARTICLE SPECIFICATIONS:
 6. Consumer Need: {consumer_need}
 7. Tone of Voice: {tone_of_voice}
 8. Target Audiences: {', '.join(target_audiences)}
-ADDITIONAL CONTEXT:
+ARTICLE BRIEF:
+{article_brief}
 
-{community_details_text}
+DESIRED WORD COUNT: {article_desired_word_count}
+DESIRED SECTIONS: {article_desired_sections}
 """
+
     full_article_prompt = f"""
 Generate a comprehensive article title and outline based on the following information:
 ARTICLE BRIEF:
@@ -318,7 +429,7 @@ Return ONLY a JSON object with this structure:
     "article_outline": "H1/Title, H2, H3, etc.",
 }}
 """
-    response, token_usage, raw_response = query_llm_api(full_article_prompt)
+    response, token_usage, raw_response = query_llm_api(llm_model, full_article_prompt)
     
     # Track token usage
     token_usage_history = session.get('token_usage_history', [])
@@ -328,13 +439,15 @@ Return ONLY a JSON object with this structure:
         "usage": token_usage,
     })
     session['token_usage_history'] = token_usage_history
-    costs = calculate_token_costs(token_usage)
+    # costs = calculate_token_costs(token_usage)
+    costs = 1
     
     # Parse response
     try:
         response_data = clean_json_response(response)
-        article_title = response_data.get("article_title", "")
-        article_outline = response_data.get("article_outline", "")
+        print(response_data)
+        article_title = response_data["article_title"]
+        article_outline = response_data["article_outline"]
         
         return jsonify({
             'article_title': article_title,
@@ -433,8 +546,9 @@ Return the complete refined article with all improvements applied.
         "usage": token_usage,
     })
     session['token_usage_history'] = token_usage_history
-    costs = calculate_token_costs(token_usage)
-    
+    # costs = calculate_token_costs(token_usage)
+    costs = 1
+
     # Update drafts in session
     drafts = session.get('drafts_by_article', {})
     drafts[str(article_id)] = refined_text
@@ -597,7 +711,7 @@ Return only the revised article text with all formatting preserved.
 """
     
     revised_article_text, token_usage, raw_response = query_llm_api(revision_prompt)
-    costs = calculate_token_costs(token_usage)
+    # costs = calculate_token_costs(token_usage)
     
     new_rev_title = f"{article_row['article_title']} - Community Revision for {community['community_name']}"
     
@@ -633,6 +747,7 @@ Return only the revised article text with all formatting preserved.
 @app.route('/communities/list')
 def list_communities():
     communities = comm_manager.get_communities()
+    communities = [dict(c) for c in communities] if communities else []
     return jsonify(communities)
 
 @app.route('/communities/<int:community_id>')

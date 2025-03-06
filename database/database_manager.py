@@ -209,10 +209,10 @@ class DatabaseManager:
         article_length=None,
         article_sections=None,
         article_title=None,
-        article_content=None,
+        article_content='',
         article_schema=None,
-        meta_title=None,
-        meta_description=None,
+        meta_title='',
+        meta_description='',
     ):
         """Create base article content with improved error handling."""
         print("Creating article content...")

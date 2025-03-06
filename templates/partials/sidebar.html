@@ -50,10 +50,10 @@
     <h5>Article Selection</h5>
     <form id="article-selector-form" action="{{ url_for('select_article') }}" method="post">
         <div class="mb-3">
-            <label for="article-select" class="form-label">Select Article (within Project)</label>
+            <label for="article-select" class="form-label">Select Article</label>
             <select class="form-select" id="article-select" name="article_id" onchange="this.form.submit()">
                 <option value="new">Create New Article</option>
-                {% for article in articles[0] %}
+                {% for article in articles %}
                     <option value="{{ article.id }}" {% if session.get('article_id') == article.id %}selected{% endif %}>
                         {{ article.article_title }} (ID: {{ article.id }})
                     </option>
@@ -69,3 +69,19 @@
     {% endif %}
 </div>
 {% endif %}
+
+<script>
+$(document).ready(function() {
+    // Toggle debug mode
+    $('#debug-mode-toggle').change(function() {
+        $.ajax({
+            url: '{{ url_for("toggle_debug") }}',
+            method: 'POST',
+            success: function(response) {
+                console.log('Debug mode:', response.debug_mode);
+                window.location.reload();
+            }
+        });
+    });
+});
+</script>
