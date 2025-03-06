@@ -449,13 +449,13 @@ $(document).ready(function() {
                 $('#revision-results').html(html).show();
                 
                 // Display token usage
-                const costs = response.costs;
-                $('#revision-token-usage-info').html(`
-                    <strong>Token Usage & Costs:</strong><br>
-                    - Input: ${costs.prompt_tokens.toLocaleString()} tokens ($${costs.input_cost.toFixed(4)})<br>
-                    - Output: ${costs.completion_tokens.toLocaleString()} tokens ($${costs.output_cost.toFixed(4)})<br>
-                    - Total: ${costs.total_tokens.toLocaleString()} tokens ($${costs.total_cost.toFixed(4)})
-                `);
+                // const costs = response.costs;
+                // $('#revision-token-usage-info').html(`
+                //     <strong>Token Usage & Costs:</strong><br>
+                //     - Input: ${costs.prompt_tokens.toLocaleString()} tokens ($${costs.input_cost.toFixed(4)})<br>
+                //     - Output: ${costs.completion_tokens.toLocaleString()} tokens ($${costs.output_cost.toFixed(4)})<br>
+                //     - Total: ${costs.total_tokens.toLocaleString()} tokens ($${costs.total_cost.toFixed(4)})
+                // `);
             },
             error: function(xhr) {
                 btn.prop('disabled', false).text('Generate Community Revision');

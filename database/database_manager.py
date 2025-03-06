@@ -205,10 +205,10 @@ class DatabaseManager:
     def create_article_content(
         self,
         project_id,
-        article_brief=None,
+        article_brief='',
         article_length=None,
         article_sections=None,
-        article_title=None,
+        article_title='',
         article_content='',
         article_schema=None,
         meta_title='',
