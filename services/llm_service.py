@@ -1,7 +1,6 @@
 import os
 import json
 import requests
-import streamlit as st
 from utils.json_cleaner import clean_json_response
 from utils.token_calculator import calculate_token_costs
 
@@ -13,7 +12,7 @@ def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[
     """
     url = "https://api.openai.com/v1/chat/completions"
     try:
-        api_key = st.secrets["OPENAI_API_KEY"]
+        api_key = os.getenv("OPENAI_API_KEY")
     except Exception:
         return "Error: No OPENAI_API_KEY found in st.secrets.", {}, ""
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}

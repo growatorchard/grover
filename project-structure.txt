@@ -1,0 +1,38 @@
+/grover-flask/
+  ├── app.py                   # Main application file
+  ├── config/
+  │   ├── __init__.py
+  │   └── settings.py          # settings file
+  ├── database/
+  │   ├── __init__.py
+  │   ├── database_manager.py  # database manager
+  │   └── community_manager.py # community manager
+  ├── services/
+  │   ├── __init__.py
+  │   ├── llm_service.py       # LLM service
+  │   ├── semrush_service.py   # SEMrush service
+  │   ├── community_service.py # community service
+  │   ├── article_service.py   # article service
+  │   └── project_service.py   # project service
+  ├── utils/
+  │   ├── __init__.py
+  │   ├── token_calculator.py  # token calculator
+  │   └── json_cleaner.py      # JSON cleaner
+  ├── static/
+  │   ├── css/
+  │   │   └── main.css         # Main stylesheet
+  │   └── js/
+  │       └── main.js          # JavaScript functionality
+  ├── templates/
+  │   ├── base.html            # Base template with layout
+  │   ├── index.html           # Main application page
+  │   ├── components/          # Reusable components
+  │   │   ├── project_form.html
+  │   │   ├── keyword_manager.html
+  │   │   ├── article_settings.html
+  │   │   └── article_editor.html
+  │   └── partials/            # Partial templates
+  │       ├── header.html
+  │       ├── sidebar.html
+  │       └── debug_panel.html
+  └── requirements.txt         # Dependencies

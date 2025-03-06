@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="accordion" id="mainAccordion">
+    <!-- 1. Create/Update Project -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button {% if not session.get('project_id') %}{% else %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#projectSection" aria-expanded="{% if not session.get('project_id') %}true{% else %}false{% endif %}" aria-controls="projectSection">
+                {% if not session.get('project_id') %}1) Create Project{% else %}1) Update Project{% endif %}
+            </button>
+        </h2>
+        <div id="projectSection" class="accordion-collapse collapse {% if not session.get('project_id') %}show{% endif %}">
+            <div class="accordion-body">
+                {% include 'components/project_form.html' %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Only show the remaining sections if a project is selected -->
+    {% if session.get('project_id') %}
+    
+    <!-- 2. Manage Keywords -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#keywordSection" aria-expanded="false" aria-controls="keywordSection">
+                2) Manage Keywords (SEMrush)
+            </button>
+        </h2>
+        <div id="keywordSection" class="accordion-collapse collapse">
+            <div class="accordion-body">
+                {% include 'components/keyword_manager.html' %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- 3. Create/Select Article -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#articleCreateSection" aria-expanded="false" aria-controls="articleCreateSection">
+                3) Create/Select Article
+            </button>
+        </h2>
+        <div id="articleCreateSection" class="accordion-collapse collapse">
+            <div class="accordion-body">
+                <div id="existing-articles-container">
+                    <!-- This will be populated via AJAX -->
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-3">
+                    <button id="create-article-btn" class="btn btn-primary">Create New Article</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 4. Generate & Refine Article (LLM) -->
+    {% if session.get('article_id') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#articleGenerateSection" aria-expanded="false" aria-controls="articleGenerateSection">
+                4) Generate & Refine Article (LLM)
+            </button>
+        </h2>
+        <div id="articleGenerateSection" class="accordion-collapse collapse">
+            <div class="accordion-body">
+                {% include 'components/article_editor.html' %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- 5. Final Article (Auto-Saved) -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#finalArticleSection" aria-expanded="false" aria-controls="finalArticleSection">
+                5) Final Article (Auto-Saved)
+            </button>
+        </h2>
+        <div id="finalArticleSection" class="accordion-collapse collapse">
+            <div class="accordion-body">
+                <div id="final-article-container">
+                    <!-- This will be populated via AJAX -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 6. View Saved Article -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#viewArticleSection" aria-expanded="false" aria-controls="viewArticleSection">
+                6) View Saved Article
+            </button>
+        </h2>
+        <div id="viewArticleSection" class="accordion-collapse collapse">
+            <div class="accordion-body">
+                <div id="view-article-container">
+                    <!-- This will be populated via AJAX -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 7. Generate Community-Specific Revision -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#communityRevisionSection" aria-expanded="false" aria-controls="communityRevisionSection">
+                7) Generate Community-Specific Revision
+            </button>
+        </h2>
+        <div id="communityRevisionSection" class="accordion-collapse collapse">
+            <div class="accordion-body">
+                <div id="community-revision-container">
+                    <!-- This will be populated via AJAX -->
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+    
+    <!-- Debug Info (only shown in debug mode) -->
+    {% if session.get('debug_mode') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#debugSection" aria-expanded="false" aria-controls="debugSection">
+                Debug Info
+            </button>
+        </h2>
+        <div id="debugSection" class="accordion-collapse collapse">
+            <div class="accordion-body">
+                {% include 'partials/debug_panel.html' %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal for Article Settings -->
+<div class="modal fade" id="articleSettingsModal" tabindex="-1" aria-labelledby="articleSettingsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="articleSettingsModalLabel">Article Settings</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                {% include 'components/article_settings.html' %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

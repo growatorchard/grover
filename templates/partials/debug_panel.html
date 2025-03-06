@@ -1,0 +1,52 @@
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Debug Information</h5>
+    </div>
+    <div class="card-body">
+        <h6>Session State</h6>
+        <pre class="bg-light p-3 rounded">
+project_id: {{ session.get('project_id') }}
+article_id: {{ session.get('article_id') }}
+selected_model: {{ session.get('selected_model') }}
+is_creating_article_settings: {{ session.get('is_creating_article_settings') }}
+is_editing_article: {{ session.get('is_editing_article') }}
+        </pre>
+        
+        <h6>Token Usage History</h6>
+        <table class="table table-sm table-bordered">
+            <thead>
+                <tr>
+                    <th>Iteration</th>
+                    <th>Timestamp</th>
+                    <th>Input Tokens</th>
+                    <th>Output Tokens</th>
+                    <th>Total Tokens</th>
+                    <th>Cost</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in session.get('token_usage_history', []) %}
+                <tr>
+                    <td>{{ entry.iteration }}</td>
+                    <td>{{ entry.timestamp }}</td>
+                    <td>{{ entry.usage.prompt_tokens }}</td>
+                    <td>{{ entry.usage.completion_tokens }}</td>
+                    <td>{{ entry.usage.total_tokens }}</td>
+                    <td>${{ (entry.usage.prompt_tokens * 0.00000 + entry.usage.completion_tokens * 0.00000)|round(5) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        {% if session.get('project_id') %}
+        <h6>Selected Project Details</h6>
+        <pre class="bg-light p-3 rounded">{{ selected_project|tojson(indent=2) }}</pre>
+        {% endif %}
+        
+        {% if session.get('article_id') %}
+        <h6>Selected Article Details</h6>
+        <pre class="bg-light p-3 rounded">{{ article|tojson(indent=2) if article else 'No article data available' }}</pre>
+        
+        <h6>Article Drafts</h6>
+        <pre class="bg-light p-3 rounded">{{ session.get('drafts_by_article', {})|tojson(indent=2) }}</pre>
+        {% endif %}

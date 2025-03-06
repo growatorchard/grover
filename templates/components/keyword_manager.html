@@ -1,0 +1,282 @@
+<!-- Existing Keywords Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Existing Keywords</h5>
+    </div>
+    <div class="card-body">
+        <div id="existing-keywords-container">
+            <div class="d-flex justify-content-center">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Keywords Manually Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Add Keywords Manually</h5>
+    </div>
+    <div class="card-body">
+        <form id="add-keywords-form">
+            <div class="mb-3">
+                <label for="primary-keyword" class="form-label">Primary Keyword</label>
+                <input type="text" class="form-control" id="primary-keyword" name="keyword">
+            </div>
+            <div class="mb-3">
+                <label for="additional-keywords" class="form-label">Additional Keywords (one per line)</label>
+                <textarea class="form-control" id="additional-keywords" name="additional_keywords" rows="4"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Save Keywords</button>
+        </form>
+    </div>
+</div>
+
+<!-- Research with SEMrush Section -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Research with SEMrush</h5>
+    </div>
+    <div class="card-body">
+        <form id="semrush-research-form">
+            <div class="mb-3">
+                <label for="semrush-keyword" class="form-label">Enter a keyword to research</label>
+                <input type="text" class="form-control" id="semrush-keyword" name="keyword">
+            </div>
+            <button type="submit" class="btn btn-primary">Research</button>
+        </form>
+        
+        <div id="semrush-results-container" class="mt-4" style="display: none;">
+            <h5>SEMrush Results</h5>
+            
+            <div id="semrush-error" class="alert alert-danger" style="display: none;"></div>
+            
+            <div id="semrush-main-keyword-container" class="mb-3" style="display: none;">
+                <h6>Main Keyword</h6>
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1" id="semrush-main-keyword-info"></div>
+                    <button type="button" class="btn btn-sm btn-success add-main-keyword">
+                        <i class="bi bi-plus"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div id="semrush-related-keywords-container" style="display: none;">
+                <h6>Related Keywords</h6>
+                <ul class="list-group" id="semrush-related-keywords-list"></ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load existing keywords on page load
+$(document).ready(function() {
+    loadExistingKeywords();
+    
+    // Add keywords form submission
+    $('#add-keywords-form').submit(function(e) {
+        e.preventDefault();
+        
+        const primaryKeyword = $('#primary-keyword').val().trim();
+        const additionalKeywords = $('#additional-keywords').val().trim();
+        
+        // Save primary keyword if provided
+        if (primaryKeyword) {
+            saveKeyword(primaryKeyword);
+        }
+        
+        // Save additional keywords if provided
+        if (additionalKeywords) {
+            const keywords = additionalKeywords.split('\n');
+            keywords.forEach(keyword => {
+                const trimmedKeyword = keyword.trim();
+                if (trimmedKeyword) {
+                    saveKeyword(trimmedKeyword);
+                }
+            });
+        }
+        
+        // Reset form
+        this.reset();
+    });
+    
+    // SEMrush research form submission
+    $('#semrush-research-form').submit(function(e) {
+        e.preventDefault();
+        
+        const keyword = $('#semrush-keyword').val().trim();
+        if (!keyword) {
+            alert('Please enter a keyword to research.');
+            return;
+        }
+        
+        // Show loading indicator
+        $('#semrush-results-container').html('<div class="d-flex justify-content-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>').show();
+        
+        // Make AJAX request to research endpoint
+        $.ajax({
+            url: '/keywords/research',
+            method: 'POST',
+            data: { keyword: keyword },
+            success: function(response) {
+                displaySemrushResults(response);
+            },
+            error: function(xhr) {
+                $('#semrush-results-container').html(`<div class="alert alert-danger">Error: ${xhr.responseText}</div>`);
+            }
+        });
+    });
+    
+    // Event delegation for dynamically added elements
+    $(document).on('click', '.delete-keyword', function() {
+        const keywordId = $(this).data('keyword-id');
+        deleteKeyword(keywordId);
+    });
+    
+    $(document).on('click', '.add-main-keyword', function() {
+        const keywordData = $('#semrush-main-keyword-info').data('keyword');
+        saveKeyword(keywordData.Ph, keywordData.Nq, keywordData.Kd);
+    });
+    
+    $(document).on('click', '.add-related-keyword', function() {
+        const keywordData = $(this).data('keyword');
+        saveKeyword(keywordData.Ph, keywordData.Nq, keywordData.Kd);
+    });
+});
+
+function loadExistingKeywords() {
+    $.ajax({
+        url: '/keywords/list',
+        method: 'GET',
+        success: function(keywords) {
+            const container = $('#existing-keywords-container');
+            
+            if (keywords.length === 0) {
+                container.html('<div class="alert alert-info">No keywords yet.</div>');
+                return;
+            }
+            
+            let html = '';
+            keywords.forEach(kw => {
+                html += `
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div>
+                        <strong>${kw.keyword}</strong>
+                        ${kw.search_volume ? ` (Vol=${kw.search_volume}` : ''}
+                        ${kw.keyword_difficulty ? `, Diff=${kw.keyword_difficulty}` : ''}
+                        ${kw.search_volume ? ')' : ''}
+                    </div>
+                    <button type="button" class="btn btn-sm btn-danger delete-keyword" data-keyword-id="${kw.id}">X</button>
+                </div>`;
+            });
+            
+            container.html(html);
+        },
+        error: function() {
+            $('#existing-keywords-container').html('<div class="alert alert-danger">Failed to load keywords. Please try again.</div>');
+        }
+    });
+}
+
+function saveKeyword(keyword, searchVolume = null, keywordDifficulty = null) {
+    $.ajax({
+        url: '/keywords/add',
+        method: 'POST',
+        data: { 
+            keyword: keyword,
+            search_volume: searchVolume,
+            keyword_difficulty: keywordDifficulty
+        },
+        success: function() {
+            loadExistingKeywords();
+        },
+        error: function(xhr) {
+            alert('Failed to save keyword: ' + xhr.responseText);
+        }
+    });
+}
+
+function deleteKeyword(keywordId) {
+    if (!confirm('Are you sure you want to delete this keyword?')) {
+        return;
+    }
+    
+    $.ajax({
+        url: '/keywords/delete',
+        method: 'POST',
+        data: { keyword_id: keywordId },
+        success: function() {
+            loadExistingKeywords();
+        },
+        error: function(xhr) {
+            alert('Failed to delete keyword: ' + xhr.responseText);
+        }
+    });
+}
+
+function displaySemrushResults(data) {
+    // Clear previous results containers
+    $('#semrush-error').hide();
+    $('#semrush-main-keyword-container').hide();
+    $('#semrush-related-keywords-container').hide();
+    
+    // Check for errors
+    if (data.error) {
+        $('#semrush-error').text(data.error).show();
+        return;
+    }
+    
+    // Display main keyword if available
+    const mainKeyword = data.main_keyword;
+    if (mainKeyword) {
+        const mainKeywordInfo = `<strong>${mainKeyword.Ph || 'N/A'}</strong> (Volume=${mainKeyword.Nq || 'N/A'}, Diff=${mainKeyword.Kd || 'N/A'})`;
+        $('#semrush-main-keyword-info').html(mainKeywordInfo).data('keyword', mainKeyword);
+        $('#semrush-main-keyword-container').show();
+    }
+    
+    // Display related keywords if available
+    const relatedKeywords = data.related_keywords;
+    if (relatedKeywords && relatedKeywords.length > 0) {
+        const intentMap = {
+            '0': 'Commercial',
+            '1': 'Informational',
+            '2': 'Navigational',
+            '3': 'Transactional'
+        };
+        
+        let html = '';
+        relatedKeywords.forEach((rk, idx) => {
+            let intentDesc = 'N/A';
+            
+            if (rk.In) {
+                if (rk.In.includes(',')) {
+                    const intentValues = rk.In.split(',');
+                    const intentDescriptions = intentValues.map(val => intentMap[val.trim()] || 'Unknown');
+                    intentDesc = intentDescriptions.join(', ');
+                } else {
+                    intentDesc = intentMap[rk.In] || 'N/A';
+                }
+            }
+            
+            html += `
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>${rk.Ph || 'N/A'}</strong> (Vol=${rk.Nq || 'N/A'}, Diff=${rk.Kd || 'N/A'}, Intent=${intentDesc})
+                </div>
+                <button type="button" class="btn btn-sm btn-success add-related-keyword" data-keyword='${JSON.stringify(rk)}'>
+                    <i class="bi bi-plus"></i>
+                </button>
+            </li>`;
+        });
+        
+        $('#semrush-related-keywords-list').html(html);
+        $('#semrush-related-keywords-container').show();
+    }
+    
+    // Show results container
+    $('#semrush-results-container').show();
+}
+</script>

@@ -1,0 +1,69 @@
+<form id="article-settings-form">
+    <div class="mb-3">
+        <label for="article-brief" class="form-label">Article Brief</label>
+        <textarea class="form-control" id="article-brief" name="article_brief" rows="5">{{ article_settings.article_brief if article_settings else '' }}</textarea>
+    </div>
+    
+    <div class="mb-3">
+        <label for="article-length" class="form-label">Desired total word count for the article</label>
+        <input type="number" class="form-control" id="article-length" name="article_length" 
+               min="200" max="20000" step="100" 
+               value="{{ article_settings.article_length if article_settings else 1000 }}">
+    </div>
+    
+    <div class="mb-3">
+        <label for="article-sections" class="form-label">Number of sections</label>
+        <input type="number" class="form-control" id="article-sections" name="article_sections" 
+               min="1" max="20" step="1" 
+               value="{{ article_settings.article_sections if article_settings else 5 }}">
+    </div>
+    
+    <div class="d-flex justify-content-end">
+        <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+    </div>
+</form>
+
+<script>
+$(document).ready(function() {
+    $('#article-settings-form').submit(function(e) {
+        e.preventDefault();
+        
+        const formData = {
+            article_brief: $('#article-brief').val(),
+            article_length: $('#article-length').val(),
+            article_sections: $('#article-sections').val()
+        };
+        
+        const endpoint = '{{ url_for('create_article_settings') if not session.get('article_id') else url_for('update_article_settings') }}';
+        
+        $.ajax({
+            url: endpoint,
+            method: 'POST',
+            data: formData,
+            success: function(response) {
+                if (response.success) {
+                    // Close modal
+                    $('#articleSettingsModal').modal('hide');
+                    
+                    // Show success alert
+                    $('<div class="alert alert-success alert-dismissible fade show" role="alert">')
+                        .text('Article settings saved successfully.')
+                        .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>')
+                        .prependTo('#articleGenerateSection .accordion-body');
+                    
+                    // Refresh the page if needed
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    alert('Failed to save article settings: ' + response.error);
+                }
+            },
+            error: function(xhr) {
+                alert('Failed to save article settings: ' + xhr.responseText);
+            }
+        });
+    });
+});
+</script>

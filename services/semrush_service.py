@@ -1,6 +1,5 @@
 import os
 import requests
-import streamlit as st
 
 def build_semrush_url(api_type, phrase, api_key, database="us", export_columns="", display_limit=None, debug_mode=False):
     """Build the Semrush API URL with the required parameters."""

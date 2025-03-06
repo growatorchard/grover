@@ -17,7 +17,25 @@ from utils.json_cleaner import clean_json_response
 load_dotenv()  # Load environment variables from .env file
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
+app.secret_key = os.environ.get('SECRET_KEY')
+import json
+
+# Custom Jinja filters
+@app.template_filter('from_json')
+def from_json_filter(value):
+    """Convert a JSON string to a Python object."""
+    try:
+        if value:
+            return json.loads(value)
+        return []
+    except:
+        return []
+
+@app.template_filter('tojson')
+def to_json_filter(value, indent=None):
+    """Convert a Python object to a JSON string."""
+    return json.dumps(value, indent=indent)
+
 
 # Initialize database managers
 db = DatabaseManager()
