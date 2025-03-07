@@ -917,26 +917,6 @@ def get_community_details(community_id):
     }
     
     return jsonify(response_data)
-
-
-@app.route('/articles/save_community_post_content', methods=['POST'])
-def save_community_post_content():
-    article_id = session.get('article_id')
-    if not article_id:
-        return jsonify({'error': 'No article selected'}), 400
-    
-    community_id = request.form.get('community_id')
-    if not community_id:
-        return jsonify({'error': 'No community selected'}), 400
-    
-    article_content = request.form.get('article_content', '')
-    
-    try:
-        db.save_community_post_content(article_id, community_id, article_content)
-        return jsonify({'success': True})
-    except Exception as e:
-        app.logger.error(f"Error saving community article: {str(e)}")
-        return jsonify({'error': str(e)}), 500
     
 @app.route('/community_articles/select', methods=['POST'])
 def select_community_article():
@@ -972,7 +952,7 @@ def list_community_articles():
             formatted_articles.append({
                 'id': article['id'],
                 'community_id': article['community_id'],
-                'community_name': article['community_name'],  # This will come from joining with the communities table
+                'community_name': article['community_name'],
                 'article_title': article['article_title'],
                 'created_at': article['created_at'].isoformat() if hasattr(article['created_at'], 'isoformat') else article['created_at'],
                 'updated_at': article['updated_at'].isoformat() if hasattr(article['updated_at'], 'isoformat') else article['updated_at']
@@ -1025,7 +1005,8 @@ def delete_community_article():
         try:
             db.delete_community_article(community_article_id)
             session['community_article_id'] = None
-            return jsonify({'success': True})
+            # return jsonify({'success': True})
+            return redirect(url_for('index'))
         except Exception as e:
             app.logger.error(f"Error deleting community article: {str(e)}")
             return jsonify({'error': str(e)}), 500

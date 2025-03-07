@@ -48,7 +48,7 @@ def get_care_area_details(comm_manager, community_id, selected_care_areas):
         care_area_info = f"""
 ===================================================
 🏡 Care Area: {care_area_name}
----------------------------------------------------
+===================================================
 📜 Description:
 {care_area.get('general_floor_plan_description', 'N/A')}
 

@@ -332,6 +332,7 @@ $(document).ready(function () {
 
         $(document).on('change', '#community-select', function () {
             const communityId = $(this).val();
+            console.log('Selected community:', communityId);
             const createBtn = $('#create-community-article-btn');
 
             // Reset UI elements
@@ -361,7 +362,7 @@ $(document).ready(function () {
                     console.log("Community data received:", data);
 
                     const community = data.community;
-
+                    createBtn.prop('disabled', false);
                     // Create community details card
                     let html = `
             <div class="card">
