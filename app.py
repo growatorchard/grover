@@ -871,8 +871,28 @@ Please return only the revised article text.
 
 @app.route('/communities/list')
 def list_communities():
+    project_id = session.get('project_id')
     communities = comm_manager.get_communities()
     communities = [dict(c) for c in communities] if communities else []
+
+    project_care_areas = []
+    if project_id:
+        project = db.get_project(project_id)
+        if project:
+            project_care_areas = json.loads(project['care_areas'])
+    
+    communities_missing_care_areas = []
+    for community in communities:
+        community_care_areas = comm_manager.get_care_areas(community['id'])
+        community_care_area_names = [dict(area).get('care_area', '') for area in community_care_areas]
+        for project_area in project_care_areas:
+            if project_area not in community_care_area_names:
+                communities_missing_care_areas.append(community['id'])
+                break
+    
+    if communities_missing_care_areas:
+        communities = [c for c in communities if c['id'] not in communities_missing_care_areas]
+
     return jsonify(communities)
 
 @app.route('/communities/<int:community_id>')
@@ -880,66 +900,20 @@ def get_community_details(community_id):
     community = comm_manager.get_community(community_id)
     aliases = comm_manager.get_aliases(community_id)
     
-    # Get project care areas from the current project if one is selected
+    # get the care areas selected in the project
     project_id = session.get('project_id')
-    selected_care_area_names = []
+    project = db.get_project(project_id)
+    if project:
+        project_care_areas = json.loads(project['care_areas'])
+    else:
+        project_care_areas = []
     
-    if project_id:
-        try:
-            pinfo = db.get_project(project_id)
-            print(f"Project Info: {dict(pinfo)}")
-            
-            # CRITICAL FIX - Directly extract Skilled Nursing from the care_areas field
-            care_areas_raw = pinfo.get("care_areas", "")
-            print(f"Raw care_areas: {care_areas_raw!r}")
-            
-            # Try a very direct approach - using string searching instead of JSON parsing
-            if "Skilled Nursing" in care_areas_raw:
-                print("Found 'Skilled Nursing' in care_areas string!")
-                selected_care_area_names.append("Skilled Nursing")
-            
-            # Also try JSON parsing as a backup
-            try:
-                parsed_list = json.loads(care_areas_raw)
-                print(f"Parsed JSON: {parsed_list}")
-                
-                if isinstance(parsed_list, list):
-                    for item in parsed_list:
-                        if item not in selected_care_area_names:
-                            selected_care_area_names.append(item)
-                            print(f"Added {item} from JSON parsing")
-            except Exception as e:
-                print(f"JSON parsing error: {str(e)}")
-        except Exception as e:
-            print(f"Error getting project care areas: {str(e)}")
-    
-    print(f"Final selected_care_area_names: {selected_care_area_names}")
-    
-    # Get community care areas
-    community_care_areas = comm_manager.get_care_areas(community_id)
-    community_care_area_names = [dict(area).get('care_area', '') for area in community_care_areas]
-    
-    # Check for missing care areas
-    missing_care_areas = []
-    for project_area in selected_care_area_names:
-        print(f"Checking care area: {project_area}")
-        if not any(project_area.lower() == community_area.lower() for community_area in community_care_area_names):
-            print(f"Missing care area: {project_area}")
-            missing_care_areas.append(project_area)
-    
-    print(f"Community care area names: {community_care_area_names}")
-    print(f"Missing care areas: {missing_care_areas}")
-    
-    # Get care area details
-    care_area_details = get_care_area_details(comm_manager, community_id, selected_care_area_names)
+    care_area_details = get_care_area_details(comm_manager, community_id, project_care_areas)
     
     response_data = {
         'community': dict(community),
         'aliases': [dict(a) for a in aliases] if aliases else [],
         'care_area_details': care_area_details,
-        'community_care_areas': community_care_area_names,
-        'missing_care_areas': missing_care_areas,
-        'selected_care_areas': selected_care_area_names
     }
     
     return jsonify(response_data)

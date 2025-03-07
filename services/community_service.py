@@ -6,19 +6,25 @@ def get_care_area_details(comm_manager, community_id, selected_care_areas):
         community_id: ID of the community
         selected_care_areas: List of care area names to include (e.g. ["Independent Living", "Assisted Living"])
     """
+    print(f"Getting detailed care area information for community ID: {community_id}")
     care_areas = comm_manager.get_care_areas(community_id)
     detailed_care_areas = []
 
     # Normalize the selected care areas for case-insensitive comparison
     normalized_selected_areas = [area.strip().lower() for area in selected_care_areas]
+
+    print(f"Selected care areas: {selected_care_areas}")
     
     for care_area in care_areas:
         care_area = dict(care_area)
+        print(f"Processing care area: {care_area.get('care_area', 'N/A')}")
         
         # Only include care areas that match the selected ones
         care_area_name = care_area.get('care_area', 'N/A')
         if care_area_name.lower() not in normalized_selected_areas:
             continue
+
+        print(f"Processing care area: {care_area_name}")
         
         # Get floor plan details
         floor_plans = comm_manager.get_floor_plans(care_area["id"])
@@ -61,5 +67,7 @@ def get_care_area_details(comm_manager, community_id, selected_care_areas):
                 care_area_info += "\n".join(f"    - {desc}" for desc in descriptions) + "\n"
 
         detailed_care_areas.append(care_area_info)
+        print(f"Finished processing care areas for community ID: {detailed_care_areas}")
+
 
     return "\n".join(detailed_care_areas)

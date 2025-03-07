@@ -373,7 +373,6 @@ $(document).ready(function () {
                     <p><strong>Location:</strong> ${community.city}, ${community.state}</p>
                     <p><strong>Primary Domain:</strong> ${community.community_primary_domain}</p>
                     <p><strong>Aliases:</strong> ${data.aliases.map(a => a.alias).join(', ') || 'None'}</p>
-                    <p><strong>Available Care Areas:</strong> ${data.community_care_areas.join(', ') || 'None'}</p>
                     <div class="mt-3">
                         <h6>Care Area Details:</h6>
                         <div class="care-area-details mt-2">
@@ -384,34 +383,6 @@ $(document).ready(function () {
             </div>`;
 
                     $('#community-details').html(html).show();
-
-                    // Check if there are missing care areas
-                    if (data.missing_care_areas && data.missing_care_areas.length > 0) {
-                        console.log("Found missing care areas:", data.missing_care_areas);
-
-                        const missingCareAreas = data.missing_care_areas.join(', ');
-                        const selectedCareAreas = data.selected_care_areas.join(', ');
-
-                        const warningHtml = `
-                <div class="alert alert-warning">
-                    <strong>Warning:</strong> This community does not offer the following care areas from your project: 
-                    <strong>${missingCareAreas}</strong>.
-                    <br><br>
-                    Your project care areas: <strong>${selectedCareAreas}</strong>
-                    <br>
-                    Community care areas: <strong>${data.community_care_areas.join(', ')}</strong>
-                    <br><br>
-                    The generated article may not be accurate. Consider selecting a different community or 
-                    updating your project settings.
-                </div>`;
-
-                        $('#care-area-warning').html(warningHtml).show();
-                        createBtn.prop('disabled', true);
-                    } else {
-                        console.log("No missing care areas found");
-                        $('#care-area-warning').hide().empty();
-                        createBtn.prop('disabled', false);
-                    }
                 },
                 error: function (error) {
                     console.error('Error loading community details:', error);
@@ -421,8 +392,6 @@ $(document).ready(function () {
                     <strong>Error:</strong> Failed to load community details. Please try again.
                 </div>
             `).show();
-
-                    $('#care-area-warning').hide().empty();
                     createBtn.prop('disabled', true);
                 }
             });

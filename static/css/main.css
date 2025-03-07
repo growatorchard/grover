@@ -115,23 +115,3 @@ textarea::-webkit-scrollbar-thumb {
         position: static;
     }
 }
-
-#care-area-warning {
-    margin-top: 1rem;
-    margin-bottom: 1rem;
-}
-
-#care-area-warning .alert {
-    margin-bottom: 0;
-}
-
-/* Force visibility for testing */
-#care-area-warning.force-visible {
-    display: block !important;
-}
-
-/* Test display */
-.warning-test-active {
-    border: 2px solid red;
-    padding: 10px;
-}
