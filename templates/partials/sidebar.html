@@ -68,6 +68,32 @@
         </form>
     {% endif %}
 </div>
+
+<!-- Community Article Selection (only if a base article is chosen) -->
+{% if session.get('article_id') %}
+<div class="mb-4">
+    <h5>Community Articles</h5>
+    <form id="community-article-selector-form" action="{{ url_for('select_community_article') }}" method="post">
+        <div class="mb-3">
+            <label for="community-article-select" class="form-label">Select Community Article</label>
+            <select class="form-select" id="community-article-select" name="community_article_id" onchange="this.form.submit()">
+                <option value="new">Create New Community Article</option>
+                {% for comm_article in community_articles %}
+                    <option value="{{ comm_article.id }}" {% if session.get('community_article_id') == comm_article.id %}selected{% endif %}>
+                        {{ comm_article.community_name }} (ID: {{ comm_article.id }})
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+    
+    {% if session.get('community_article_id') %}
+        <form action="{{ url_for('delete_community_article') }}" method="post" onsubmit="return confirm('Are you sure you want to delete this community article?');">
+            <button type="submit" class="btn btn-danger btn-sm">Delete Community Article</button>
+        </form>
+    {% endif %}
+</div>
+{% endif %}
 {% endif %}
 
 <script>
@@ -83,5 +109,25 @@ $(document).ready(function() {
             }
         });
     });
+
+    // Load community articles when a base article is selected
+    {% if session.get('article_id') %}
+    $.ajax({
+        url: '/community_articles/list',
+        method: 'GET',
+        data: { base_article_id: {{ session.get('article_id') }} },
+        success: function(data) {
+            var select = $('#community-article-select');
+            select.find('option:not(:first)').remove();
+            
+            if (data.length > 0) {
+                $.each(data, function(index, article) {
+                    var selected = {{ session.get('community_article_id', 0) }} == article.id ? 'selected' : '';
+                    select.append('<option value="' + article.id + '" ' + selected + '>' + article.community_name + ' (ID: ' + article.id + ')</option>');
+                });
+            }
+        }
+    });
+    {% endif %}
 });
 </script>

@@ -82,6 +82,7 @@ class DatabaseManager:
                 meta_description TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
                 FOREIGN KEY (base_article_id) REFERENCES base_articles(id) ON DELETE CASCADE
             );
             """
@@ -452,34 +453,61 @@ class DatabaseManager:
         meta_title='',
         meta_description='',
     ):
+        """Create a new community article that's a copy of a base article."""
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO community_articles (
-                    project_id, base_article_id, community_id, article_title, article_content, article_schema,
-                    meta_title, meta_description,
-                    created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """,
-                (
-                    project_id,
-                    base_article_id,
-                    community_id,
-                    article_title,
-                    article_content,
+            try:
+                # Begin transaction
+                conn.execute("BEGIN")
+                cursor = conn.cursor()
+                
+                # Get base article content if needed
+                if not article_title:
+                    base_article = self.get_article_content(base_article_id)
+                    if base_article:
+                        article_title = base_article.get('article_title', '')
+                        article_content = base_article.get('article_content', '')
+                        article_schema = base_article.get('article_schema')
+                        meta_title = base_article.get('meta_title', '')
+                        meta_description = base_article.get('meta_description', '')
+                
+                # Insert new community article
+                cursor.execute(
+                    """
+                    INSERT INTO community_articles (
+                        project_id, base_article_id, community_id, article_title, article_content, article_schema,
+                        meta_title, meta_description,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
                     (
-                        json.dumps(article_schema)
-                        if isinstance(article_schema, dict)
-                        else article_schema
+                        project_id,
+                        base_article_id,
+                        community_id,
+                        article_title,
+                        article_content,
+                        (
+                            json.dumps(article_schema)
+                            if isinstance(article_schema, dict)
+                            else article_schema
+                        ),
+                        meta_title,
+                        meta_description,
                     ),
-                    meta_title,
-                    meta_description,
-                ),
-            )
-            conn.commit()
-            return cursor.lastrowid
+                )
+                
+                # Get the ID of the newly created article
+                new_article_id = cursor.lastrowid
+                
+                # Commit transaction
+                conn.commit()
+                return new_article_id
+                
+            except Exception as e:
+                # Rollback on error
+                conn.rollback()
+                print(f"Database error in create_community_article: {str(e)}")
+                raise e
 
     def save_community_post_content(self, community_article_id, article_content):
         with self.get_connection() as conn:
@@ -493,3 +521,133 @@ class DatabaseManager:
                 (article_content, community_article_id),
             )
             conn.commit()
+
+    def get_community_articles_for_base_article(self, base_article_id):
+        """Get all community articles for a base article."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Query without joining with communities table
+            cursor.execute(
+                """
+                SELECT * FROM community_articles
+                WHERE base_article_id = ?
+                ORDER BY created_at DESC
+                """,
+                (base_article_id,)
+            )
+            articles = cursor.fetchall()
+            
+            # If we have articles, enrich them with community data
+            if articles:
+                # Convert to list of dicts for easier manipulation
+                article_list = [dict(article) for article in articles]
+                
+                # Fetch community details from comm_manager
+                from app import comm_manager  # Import here to avoid circular imports
+                for article in article_list:
+                    try:
+                        community = comm_manager.get_community(article['community_id'])
+                        if community:
+                            article['community_name'] = community['community_name']
+                        else:
+                            article['community_name'] = f"Community {article['community_id']}"
+                    except Exception as e:
+                        print(f"Error getting community name: {str(e)}")
+                        article['community_name'] = f"Community {article['community_id']}"
+                
+                return article_list
+            
+            return []
+
+    def get_community_article(self, community_article_id):
+        """Get a specific community article by ID."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM community_articles
+                WHERE id = ?
+                """,
+                (community_article_id,)
+            )
+            article = cursor.fetchone()
+            
+            if article:
+                # Convert to dict for easier manipulation
+                article_dict = dict(article)
+                
+                # Fetch community details from comm_manager
+                from app import comm_manager  # Import here to avoid circular imports
+                try:
+                    community = comm_manager.get_community(article_dict['community_id'])
+                    if community:
+                        article_dict['community_name'] = community['community_name']
+                    else:
+                        article_dict['community_name'] = f"Community {article_dict['community_id']}"
+                except Exception as e:
+                    print(f"Error getting community name: {str(e)}")
+                    article_dict['community_name'] = f"Community {article_dict['community_id']}"
+                
+                return article_dict
+            
+            return None
+
+    def get_community_article_by_community(self, base_article_id, community_id):
+        """Check if a community article exists for a specific base article and community."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM community_articles
+                WHERE base_article_id = ? AND community_id = ?
+                """,
+                (base_article_id, community_id)
+            )
+            return cursor.fetchone()
+
+    def save_community_article_content(self, community_article_id, article_title=None, article_content=None):
+        """Save or update a community article's content."""
+        with self.get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+                
+                # Get current values to use as defaults for NULL values
+                cursor.execute(
+                    "SELECT * FROM community_articles WHERE id = ?", 
+                    (community_article_id,)
+                )
+                current = cursor.fetchone()
+                
+                if not current:
+                    raise ValueError(f"No community article found with ID {community_article_id}")
+                
+                # Use existing values for any NULL parameters
+                article_title = article_title if article_title is not None else current['article_title']
+                article_content = article_content if article_content is not None else current['article_content']
+                
+                cursor.execute(
+                    """
+                    UPDATE community_articles
+                    SET article_title = ?, article_content = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (article_title, article_content, community_article_id)
+                )
+                conn.commit()
+                return True
+                
+            except Exception as e:
+                conn.rollback()
+                print(f"Database error in save_community_article_content: {str(e)}")
+                raise e
+
+    def delete_community_article(self, community_article_id):
+        """Delete a community article."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM community_articles WHERE id = ?",
+                (community_article_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0

@@ -52,6 +52,8 @@ def init_session():
         session['project_id'] = None
     if 'article_id' not in session:
         session['article_id'] = None
+    if 'community_article_id' not in session:
+        session['community_article_id'] = None
     if 'is_creating_article_settings' not in session:
         session['is_creating_article_settings'] = False
     if 'is_editing_article' not in session:
@@ -70,6 +72,8 @@ def index():
     selected_project = None
     articles = []
     current_article = None
+    community_articles = []
+    current_community_article = None
     
     if session.get('project_id'):
         selected_project = db.get_project(session['project_id'])
@@ -85,6 +89,21 @@ def index():
         if session.get('article_id'):
             try:
                 current_article = db.get_article_content(session['article_id'])
+                
+                # Get community articles for this base article
+                try:
+                    community_articles = db.get_community_articles_for_base_article(session['article_id'])
+                except Exception as e:
+                    app.logger.error(f"Error fetching community articles: {str(e)}")
+                    community_articles = []
+                
+                # Get current community article if one is selected
+                if session.get('community_article_id'):
+                    try:
+                        current_community_article = db.get_community_article(session['community_article_id'])
+                    except Exception as e:
+                        app.logger.error(f"Error fetching community article: {str(e)}")
+                        session['community_article_id'] = None
             except Exception as e:
                 app.logger.error(f"Error fetching article: {str(e)}")
                 session['article_id'] = None
@@ -94,6 +113,8 @@ def index():
                           selected_project=selected_project,
                           articles=articles,
                           current_article=current_article,
+                          community_articles=community_articles,
+                          current_community_article=current_community_article,
                           models=MODEL_OPTIONS,
                           selected_model=session.get('selected_model'),
                           target_audiences=TARGET_AUDIENCES,
@@ -809,16 +830,17 @@ Here are the details for the senior living community:
 {community_details_text}
 
 REVISION REQUIREMENTS:
-1. Incorporate community-specific details naturally throughout the article.
+1. Incorporate community-specific details naturally throughout the article. When using community-specific details, ensure they are accurate and from the details provided above. Do not imply or state any information not provided.
     Examples: community name, location, amenities, services, care areas, etc.
-2. Include relevant internal/contextual links using markdown format [text](url). To optimize internal SEO, include each link a maximum of once in the article.
+2. Ensure the article is relevant and engaging for the target audience of this community.
+3. Include relevant internal/contextual links using markdown format [text](url). To optimize internal SEO, include each link a maximum of once in the article.
     Example: [Learn more about our dining options](https://community.com/dining)
     Example: [Explore our floor plans](https://community.com/floor-plans)
 
 Please return only the revised article text.
 """
     
-    response, token_usage, raw_response = query_llm_api(revision_prompt)
+    response, token_usage, raw_response = query_llm_api(session.get('selected_model'), revision_prompt)
     costs = 1
     
     print("Response:", response)
@@ -848,30 +870,6 @@ def get_community_details(community_id):
         'care_area_details': care_area_details
     })
 
-# create community article
-@app.route('/articles/create_community_article', methods=['POST'])
-def create_community_article():
-    
-    project_id = session.get('project_id')
-    if not project_id:
-        return jsonify({'error': 'No project selected'}), 400
-    
-    base_article_id = request.form.get('base_article_id')
-    if not base_article_id:
-        return jsonify({'error': 'No base article selected'}), 400
-    
-    community_id = request.form.get('community_id')
-    if not community_id:
-        return jsonify({'error': 'No community selected'}), 400
-    
-    try:
-        new_article_id = db.create_community_article(project_id, base_article_id, community_id)
-        session['article_id'] = new_article_id
-        return jsonify({'success': True, 'article_id': new_article_id})
-    except Exception as e:
-        app.logger.error(f"Error creating community article: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
 
 
 @app.route('/articles/save_community_post_content', methods=['POST'])
@@ -888,6 +886,145 @@ def save_community_post_content():
     
     try:
         db.save_community_post_content(article_id, community_id, article_content)
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error saving community article: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    
+@app.route('/community_articles/select', methods=['POST'])
+def select_community_article():
+    community_article_id = request.form.get('community_article_id')
+    
+    if community_article_id == 'new':
+        # Clear community article selection to show the creation form
+        session['community_article_id'] = None
+        return redirect(url_for('index'))
+    else:
+        # Select existing community article
+        try:
+            community_article_id = int(community_article_id) if community_article_id else None
+            session['community_article_id'] = community_article_id
+        except (ValueError, TypeError):
+            session['community_article_id'] = None
+    
+    return redirect(url_for('index'))
+
+@app.route('/community_articles/list')
+def list_community_articles():
+    """Get all community articles for the current base article."""
+    base_article_id = request.args.get('base_article_id') or session.get('article_id')
+    if not base_article_id:
+        return jsonify([])
+    
+    try:
+        community_articles = db.get_community_articles_for_base_article(base_article_id)
+        
+        # Format the community articles for display
+        formatted_articles = []
+        for article in community_articles:
+            formatted_articles.append({
+                'id': article['id'],
+                'community_id': article['community_id'],
+                'community_name': article['community_name'],  # This will come from joining with the communities table
+                'article_title': article['article_title'],
+                'created_at': article['created_at'].isoformat() if hasattr(article['created_at'], 'isoformat') else article['created_at'],
+                'updated_at': article['updated_at'].isoformat() if hasattr(article['updated_at'], 'isoformat') else article['updated_at']
+            })
+        
+        return jsonify(formatted_articles)
+    except Exception as e:
+        app.logger.error(f"Error fetching community articles: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/community_articles/create', methods=['POST'])
+def create_community_article():
+    project_id = session.get('project_id')
+    base_article_id = session.get('article_id')
+    if not project_id or not base_article_id:
+        return jsonify({'error': 'No project or base article selected'}), 400
+    
+    community_id = request.form.get('community_id')
+    if not community_id:
+        return jsonify({'error': 'No community selected'}), 400
+    
+    try:
+        # Check if article exists for this community
+        existing = db.get_community_article_by_community(base_article_id, community_id)
+        if existing:
+            session['community_article_id'] = existing['id']
+            return jsonify({'success': True, 'article_id': existing['id'], 'message': 'Existing article selected'})
+        
+        # Get base article details
+        base_article = db.get_article_content(base_article_id)
+        
+        # Create new community article
+        new_article_id = db.create_community_article(
+            project_id=project_id,
+            base_article_id=base_article_id,
+            community_id=community_id,
+            article_title=base_article['article_title']
+        )
+        
+        session['community_article_id'] = new_article_id
+        return jsonify({'success': True, 'article_id': new_article_id})
+    except Exception as e:
+        app.logger.error(f"Error creating community article: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/community_articles/delete', methods=['POST'])
+def delete_community_article():
+    community_article_id = request.form.get('community_article_id') or session.get('community_article_id')
+    if community_article_id:
+        try:
+            db.delete_community_article(community_article_id)
+            session['community_article_id'] = None
+            return jsonify({'success': True})
+        except Exception as e:
+            app.logger.error(f"Error deleting community article: {str(e)}")
+            return jsonify({'error': str(e)}), 500
+    return jsonify({'error': 'No community article ID provided'}), 400
+
+@app.route('/community_articles/get_current')
+def get_current_community_article():
+    """Get the currently selected community article."""
+    community_article_id = session.get('community_article_id')
+    if not community_article_id:
+        return jsonify(None)
+    
+    try:
+        article = db.get_community_article(community_article_id)
+        if not article:
+            return jsonify(None)
+        
+        # Convert to dict if needed and format dates
+        article_dict = dict(article)
+        if 'created_at' in article_dict and hasattr(article_dict['created_at'], 'isoformat'):
+            article_dict['created_at'] = article_dict['created_at'].isoformat()
+        if 'updated_at' in article_dict and hasattr(article_dict['updated_at'], 'isoformat'):
+            article_dict['updated_at'] = article_dict['updated_at'].isoformat()
+            
+        return jsonify(article_dict)
+    except Exception as e:
+        app.logger.error(f"Error fetching current community article: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/community_articles/save_content', methods=['POST'])
+def save_community_article_content():
+    """Save the community article content"""
+    community_article_id = session.get('community_article_id')
+    if not community_article_id:
+        return jsonify({'error': 'No community article selected'}), 400
+
+    article_content = request.form.get('article_content', '')
+    article_title = request.form.get('article_title', '')
+    
+    try:
+        db.save_community_article_content(
+            community_article_id=community_article_id,
+            article_title=article_title,
+            article_content=article_content
+        )
+        
         return jsonify({'success': True})
     except Exception as e:
         app.logger.error(f"Error saving community article: {str(e)}")

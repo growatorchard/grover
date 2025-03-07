@@ -395,6 +395,119 @@ $(document).ready(function() {
         });
     });
 
+    $(document).ready(function() {
+        // Load community articles for the current base article
+        function loadCommunityArticles() {
+            const baseArticleId = $('#article-select').val();
+            if (!baseArticleId || baseArticleId === 'new') {
+                return;
+            }
+            
+            $.ajax({
+                url: '/community_articles/list',
+                method: 'GET',
+                data: { base_article_id: baseArticleId },
+                success: function(articles) {
+                    const container = $('#community-articles-list');
+                    
+                    if (!container.length) {
+                        return;
+                    }
+                    
+                    if (articles.length === 0) {
+                        container.html('<div class="alert alert-info">No community articles yet.</div>');
+                        return;
+                    }
+                    
+                    let html = '<h6 class="mb-3">Existing Community Articles</h6>';
+                    
+                    articles.forEach(art => {
+                        html += `
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div>
+                                <strong>${art.community_name || 'Untitled'}</strong> (ID: ${art.id})
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-sm btn-danger delete-community-article me-2" data-article-id="${art.id}">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-primary edit-community-article" data-article-id="${art.id}">
+                                    Edit
+                                </button>
+                            </div>
+                        </div>`;
+                    });
+                    
+                    container.html(html);
+                },
+                error: function() {
+                    if ($('#community-articles-list').length) {
+                        $('#community-articles-list').html('<div class="alert alert-danger">Failed to load community articles. Please try again.</div>');
+                    }
+                }
+            });
+        }
+        
+        // Call the function if a base article is selected
+        if ($('#article-select').val() && $('#article-select').val() !== 'new') {
+            loadCommunityArticles();
+        }
+        
+        // Handle article selection change
+        $('#article-select').change(function() {
+            loadCommunityArticles();
+        });
+        
+        // Handle community article deletion
+        $(document).on('click', '.delete-community-article', function() {
+            if (!confirm('Are you sure you want to delete this community article?')) {
+                return;
+            }
+            
+            const articleId = $(this).data('article-id');
+            
+            $.ajax({
+                url: '/community_articles/delete',
+                method: 'POST',
+                data: { community_article_id: articleId },
+                success: function() {
+                    loadCommunityArticles();
+                },
+                error: function(xhr) {
+                    alert('Failed to delete community article: ' + xhr.responseText);
+                }
+            });
+        });
+        
+        // Handle community article editing
+        $(document).on('click', '.edit-community-article', function() {
+            const articleId = $(this).data('article-id');
+            
+            // Post to select_community_article
+            $.ajax({
+                url: '/community_articles/select',
+                method: 'POST',
+                data: { community_article_id: articleId },
+                success: function() {
+                    // Reload the page
+                    window.location.reload();
+                },
+                error: function(xhr) {
+                    alert('Failed to select community article: ' + xhr.responseText);
+                }
+            });
+        });
+        
+        // Auto-save functionality for community article content
+        let communityAutoSaveTimeout;
+        $(document).on('input', '#community-article-title, #community-article-content', function() {
+            clearTimeout(communityAutoSaveTimeout);
+            communityAutoSaveTimeout = setTimeout(function() {
+                $('#save-community-article-btn').click();
+            }, 3000); // Auto-save after 3 seconds of inactivity
+        });
+    });
+
     // Auto-save functionality for fields in the final article section
     let autoSaveTimeout;
     $(document).on('input', '#final-article-title, #final-article-content, #final-meta-title, #final-meta-desc', function() {
