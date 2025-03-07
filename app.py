@@ -810,7 +810,7 @@ def generate_community_revision():
 - Primary Domain: {community["community_primary_domain"]}
 - Location: {community["city"]}, {community["state"]}, {community["address"]}, {community["zip_code"]}
 - Aliases: {aliases_text}
-- Page URLs:
+- Community Website URLs:
     - Home Page: {community["community_primary_domain"]}
     - About Page: {community["about_page"]}
     - Contact Page: {community["contact_page"]}
@@ -840,9 +840,6 @@ ARTICLE SPECIFICATIONS:
 8. Target Audiences: {', '.join(target_audiences)}
 9. Desired Word Count: {article_desired_word_count}
 
-Current Article Title: {article_title}
-Current Article Content: {article_content}
-
 Here are the details for the senior living community:
 {community_details_text}
 
@@ -850,11 +847,17 @@ REVISION REQUIREMENTS:
 1. Incorporate community-specific details naturally throughout the article. When using community-specific details, ensure they are accurate and from the details provided above. Do not imply or state any information not provided.
     Examples: community name, location, amenities, services, care areas, etc.
 2. Ensure the article is relevant and engaging for the target audience of this community.
-3. Include relevant internal/contextual links using markdown format [text](url).
-    Example: [Learn more about our dining options](https://community.com/dining)
-    Example: [Explore our floor plans](https://community.com/floor-plans)
+3. Include relevant internal/contextual links using markdown format [text](url). Please use each community url/link a maximum of 1 time throughout the article.
+    Good Example: Learn more about our [dining options](https://community.com/dining)
+    Good Example: Explore our [floor plans](https://community.com/floor-plans)
+    Bad Example: Click [here](https://community.com/dining) to learn more.
+4. If there is not a conclusion section already, please add a conclusion that wraps up the article and encourages the reader to take action or learn more.
+
 
 Please return only the revised article text.
+
+Current Article Title: {article_title}
+Current Article Content: {article_content}
 """
     
     response, token_usage, raw_response = query_llm_api(session.get('selected_model'), revision_prompt)
