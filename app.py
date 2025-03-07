@@ -806,53 +806,68 @@ def generate_community_revision():
     care_area_details_text = get_care_area_details(comm_manager, int(community_id), selected_care_area_names)
     
     community_details_text = f"""
-- Name: {community["community_name"]}
-- Primary Domain: {community["community_primary_domain"]}
-- Location: {community["city"]}, {community["state"]}, {community["address"]}, {community["zip_code"]}
-- Aliases: {aliases_text}
-- Community Website URLs:
-    - Home Page: {community["community_primary_domain"]}
-    - About Page: {community["about_page"]}
-    - Contact Page: {community["contact_page"]}
-    - Floor Plan Page: {community["floor_plan_page"]}
-    - Dining Page: {community["dining_page"]}
-    - Gallery Page: {community["gallery_page"]}
-    - Health & Wellness Page: {community["health_wellness_page"]}
+### **Community Name & Location:**
+- **Name:** {community["community_name"]}
+- **Location:** {community["city"]}, {community["state"]}, {community["address"]}, {community["zip_code"]}
+- **Website:** {community["community_primary_domain"]}
+- **Aliases:** {aliases_text}
+- **Community website URLs:**
+    - **About Page:** {community["about_page"]}
+    - **Contact Page:** {community["contact_page"]}
+    - **Floor Plan Page:** {community["floor_plan_page"]}
+    - **Dining Page:** {community["dining_page"]}
+    - **Gallery Page:** {community["gallery_page"]}
+    - **Health & Wellness Page:** {community["health_wellness_page"]}
 
-Care areas, amenities, and services available at this community:
+### **Care Areas & Pricing**
 {care_area_details_text}
+
+## **Special Requests & Additional Notes**  
+- **Do not exceed 1 use of community links.**  
+- **Ensure all pricing, service, and amenity details are accurate** and match the provided details.  
+- **Do not add generic senior living services** that are not explicitly listed for this community.  
+- If the original article **does not have a strong conclusion**, please add a **CTA encouraging readers to explore the community or schedule a visit.**  
 """
     
     revision_prompt = f"""
-Please help me update the following article to be tailored to the following senior living community while maintaining the original article's core message, structure, quality, and SEO optimization. When using examples of offerings/services/amenities ensure they are actually available at the community. If something is not explicitly listed in the community details, you should not imply or state that it is available.
+# **Senior Living Article Update Request: Community-Specific Content Adaptation**  
+
+## **Project Overview**  
+- **Purpose:** Update an existing article to accurately reflect a specific senior living community while maintaining the **core message, structure, SEO optimization, and tone** of the original content.  
 
 MAIN TOPIC: {topic}
-REQUIRED KEYWORDS (must be used):
-{kw_str}
 ARTICLE SPECIFICATIONS:
-1. Journey Stage: {journey_stage}
-2. Category: {category}
-3. Care Areas: {', '.join(selected_care_area_names)}
-4. Format Type: {format_type}
-5. Business Category: {business_cat}
-6. Consumer Need: {consumer_need}
-7. Tone of Voice: {tone_of_voice}
-8. Target Audiences: {', '.join(target_audiences)}
-9. Desired Word Count: {article_desired_word_count}
+- **Customer Journey Stage:** {journey_stage}
+- **Article Category:** {category}
+- **Care Areas:** {', '.join(care_areas_list)}
+- **Article Format Type:** {format_type}
+- **Business Category:** {business_cat}
+- **Consumer Need:** {consumer_need}
+- **Tone of Voice:** {tone_of_voice}
+- **Target Audience:** {', '.join(target_audiences)}
+- **Desired Word Count:** {article_desired_word_count}
 
-Here are the details for the senior living community:
+## **Content Requirements**
+### ✅ **General Guidelines**
+- Maintain the original article's **structure, core message, and SEO quality** while integrating accurate details about the specified community.
+- **Do not add or imply** services, amenities, or offerings that are not explicitly listed in the provided community details.
+- Ensure the article is **relevant and engaging** for the target audience of this specific community.
+
+### ✅ **SEO & Keyword Requirements**
+- **Required Keywords (must be used):**
+   - {kw_str}
+- Keywords should be **naturally integrated** and **not forced** within the content.
+- **Internal Linking:**
+  - Use **Markdown format** for internal links, e.g., `[Dining Options](https://community.com/dining/)`.
+  - **Each community URL should only be used once** to prevent excessive linking.
+
+### ✅ **Formatting Preferences**
+- Maintain **clear headings and subheadings** for readability.
+- Include **bullet points** where appropriate for clarity and engagement.
+- Ensure **CTA (Call to Action)** is placed at the end, encouraging readers to learn more or schedule a visit.
+
+## **Community Details to Incorporate**
 {community_details_text}
-
-REVISION REQUIREMENTS:
-1. Incorporate community-specific details naturally throughout the article. When using community-specific details, ensure they are accurate and from the details provided above. Do not imply or state any information not provided.
-    Examples: community name, location, amenities, services, care areas, etc.
-2. Ensure the article is relevant and engaging for the target audience of this community.
-3. Include relevant internal/contextual links using markdown format [text](url). Please use each community url/link a maximum of 1 time throughout the article.
-    Good Example: Learn more about our [dining options](https://community.com/dining)
-    Good Example: Explore our [floor plans](https://community.com/floor-plans)
-    Bad Example: Click [here](https://community.com/dining) to learn more.
-4. If there is not a conclusion section already, please add a conclusion that wraps up the article and encourages the reader to take action or learn more.
-
 
 Please return only the revised article text.
 
