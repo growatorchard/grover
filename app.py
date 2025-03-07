@@ -476,61 +476,6 @@ Return ONLY a JSON object with this structure:
         print("Error parsing response:", str(e))
         print("Raw response:", response)
         return jsonify({'error': str(e)}), 500
-    
-# @app.route('/articles/save_title_outline', methods=['POST'])
-# def save_article_title_outline():
-#     """Save the generated title and outline to the current article."""
-#     article_id = session.get('article_id')
-#     if not article_id:
-#         return jsonify({'error': 'No article selected'}), 400
-    
-#     article_title = request.form.get('article_title', '')
-#     article_outline = request.form.get('article_outline', '')
-    
-#     if not article_title or not article_outline:
-#         return jsonify({'error': 'Title and outline are required'}), 400
-    
-#     try:
-#         # Get current article data
-#         article = db.get_article_content(article_id)
-        
-#         # Access properties directly using dictionary-style access (if article is a dict)
-#         # or using attribute access (if article is an object)
-#         try:
-#             article_length = article['article_length'] if 'article_length' in article else 1000
-#             article_sections = article['article_sections'] if 'article_sections' in article else 5
-#             article_content = article['article_content'] if 'article_content' in article else ''
-#             meta_title = article['meta_title'] if 'meta_title' in article else ''
-#             meta_description = article['meta_description'] if 'meta_description' in article else ''
-#         except (TypeError, KeyError):
-#             # Fallback if article doesn't have these attributes
-#             article_length = 1000
-#             article_sections = 5
-#             article_content = ''
-#             meta_title = ''
-#             meta_description = ''
-        
-#         # Update title and brief
-#         db.save_article_content(
-#             project_id=session.get('project_id'),
-#             article_title=article_title,
-#             article_content=article_content,
-#             article_schema=None,
-#             meta_title=meta_title,
-#             meta_description=meta_description,
-#             article_id=article_id,
-#             article_outline=article_outline,
-#             article_length=article_length,
-#             article_sections=article_sections
-#         )
-        
-#         return jsonify({
-#             'success': True,
-#             'message': 'Title and outline saved successfully'
-#         })
-#     except Exception as e:
-#         app.logger.error(f"Error saving article title and outline: {str(e)}")
-#         return jsonify({'error': str(e)}), 500
 
 @app.route('/articles/save_title_outline', methods=['POST'])
 def save_article_title_outline():
@@ -575,61 +520,6 @@ def save_article_post_content():
         return jsonify({'success': True, 'article_id': saved_id})
     except Exception as e:
         app.logger.error(f"Error saving article: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/articles/save', methods=['POST'])
-def save_article_content():
-    """Save the article content without changing other fields."""
-    project_id = session.get('project_id')
-    article_id = session.get('article_id')
-    if not project_id or not article_id:
-        return jsonify({'error': 'No project or article selected'}), 400
-    
-    article_content = request.form.get('article_content', '')
-    
-    try:
-        # Get current article data to preserve other fields
-        article = db.get_article_content(article_id)
-        
-        # Get the values from the article object, with defaults if missing
-        try:
-            article_title = article['article_title'] if 'article_title' in article else ''
-            article_outline = article['article_outline'] if 'article_outline' in article else ''
-            article_length = article['article_length'] if 'article_length' in article else 1000
-            article_sections = article['article_sections'] if 'article_sections' in article else 5
-            meta_title = article['meta_title'] if 'meta_title' in article else ''
-            meta_description = article['meta_description'] if 'meta_description' in article else ''
-        except (TypeError, KeyError):
-            # Fallback values if article doesn't have these attributes
-            article_title = ''
-            article_outline = ''
-            article_length = 1000
-            article_sections = 5
-            meta_title = ''
-            meta_description = ''
-        
-        # Update just the content while preserving other fields
-        saved_id = db.save_article_content(
-            project_id=project_id,
-            article_title=article_title, 
-            article_outline=article_outline,
-            article_length=article_length,
-            article_sections=article_sections,
-            article_content=article_content,
-            article_schema=None,
-            meta_title=meta_title,
-            meta_description=meta_description,
-            article_id=article_id
-        )
-        
-        # Update drafts in session
-        drafts = session.get('drafts_by_article', {})
-        drafts[str(article_id)] = article_content
-        session['drafts_by_article'] = drafts
-        
-        return jsonify({'success': True, 'article_id': saved_id})
-    except Exception as e:
-        app.logger.error(f"Error saving article content: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/articles/delete', methods=['POST'])
@@ -831,27 +721,7 @@ Article:
         'raw_response': raw_response if session.get('debug_mode') else None
     })
 
-@app.route('/articles/generate_meta', methods=['POST'])
-def generate_meta_content():
-    article_id = session.get('article_id')
-    project_id = session.get('project_id')
-    if not article_id or not project_id:
-        return jsonify({'error': 'No article or project selected'}), 400
-    
-    article_content = request.form.get('article_content', '')
-    article_title = request.form.get('article_title', '')
-    
-    success = article_service.generate_article_meta_content(
-        project_id=project_id,
-        article_id=article_id,
-        article_content=article_content,
-        article_title=article_title
-    )
-    
-    if success:
-        return jsonify({'success': True})
-    return jsonify({'error': 'Failed to generate meta content'}), 500
-
+# Community Articles
 @app.route('/articles/community_revision', methods=['POST'])
 def generate_community_revision():
     article_id = session.get('article_id')
@@ -863,11 +733,33 @@ def generate_community_revision():
     if not community_id:
         return jsonify({'error': 'No community selected'}), 400
     
-    article_row = db.get_article_content(article_id)
-    if not article_row:
+    pinfo = db.get_project(project_id)
+    if not pinfo:
+        return jsonify({'error': 'Project not found'}), 404
+
+    ainfo = db.get_article_content(article_id)
+    if not ainfo:
         return jsonify({'error': 'Article not found'}), 404
     
-    original_article = article_row['article_content']
+    db_kws = db.get_project_keywords(project_id)
+    keywords = [k["keyword"] for k in db_kws] if db_kws else []
+    kw_str = ", ".join(keywords) if keywords else "(none)"
+
+    # Build context for LLM request
+    journey_stage = pinfo["journey_stage"]
+    category = pinfo["category"]
+    care_areas_list = json.loads(pinfo["care_areas"])
+    format_type = pinfo["format_type"]
+    business_cat = pinfo["business_category"]
+    consumer_need = pinfo["consumer_need"]
+    tone_of_voice = pinfo["tone_of_voice"]
+    target_audiences = json.loads(pinfo["target_audiences"])
+    topic = pinfo["topic"]
+
+    article_content = ainfo["article_content"]
+    article_desired_word_count = ainfo["article_length"]
+    article_title = ainfo["article_title"]
+
     community = comm_manager.get_community(int(community_id))
     
     aliases = comm_manager.get_aliases(int(community_id))
@@ -876,86 +768,67 @@ def generate_community_revision():
     care_area_details_text = get_care_area_details(comm_manager, int(community_id))
     
     community_details_text = f"""
-COMMUNITY DETAILS:
 - Name: {community["community_name"]}
 - Primary Domain: {community["community_primary_domain"]}
 - Location: {community["city"]}, {community["state"]}, {community["address"]}, {community["zip_code"]}
 - Aliases: {aliases_text}
+- Page URLs:
+    - Home Page: {community["community_primary_domain"]}
+    - About Page: {community["about_page"]}
+    - Contact Page: {community["contact_page"]}
+    - Floor Plan Page: {community["floor_plan_page"]}
+    - Dining Page: {community["dining_page"]}
+    - Gallery Page: {community["gallery_page"]}
+    - Health & Wellness Page: {community["health_wellness_page"]}
 
-Detailed Care Areas:
+Care areas, amenities, and services available at this community:
 {care_area_details_text}
 """
     
     revision_prompt = f"""
-ORIGINAL ARTICLE CONTEXT:
-- Article Type: {article_row['article_title']}
-- Project Details: {json.loads(db.get_project(project_id)['notes'])}
+Please help me update the following article to be tailored to the following senior living community while maintaining the original article's core message, structure, quality, and SEO optimization.
 
-ORIGINAL ARTICLE:
-{original_article}
+MAIN TOPIC: {topic}
+REQUIRED KEYWORDS (must be used):
+{kw_str}
+ARTICLE SPECIFICATIONS:
+1. Journey Stage: {journey_stage}
+2. Category: {category}
+3. Care Areas: {', '.join(care_areas_list)}
+4. Format Type: {format_type}
+5. Business Category: {business_cat}
+6. Consumer Need: {consumer_need}
+7. Tone of Voice: {tone_of_voice}
+8. Target Audiences: {', '.join(target_audiences)}
+9. Desired Word Count: {article_desired_word_count}
 
-COMMUNITY CUSTOMIZATION REQUEST:
-Please update this article to be specifically tailored for the following senior living community while maintaining the original article's core message and structure.
+Current Article Title: {article_title}
+Current Article Content: {article_content}
 
-COMMUNITY DETAILS:
+Here are the details for the senior living community:
 {community_details_text}
 
 REVISION REQUIREMENTS:
-1. Incorporate community-specific details naturally throughout the article
-2. Include relevant internal links to optimize keyword SEO; include each link a maximum of once in the article. YOU MAY NOT USE EACH LINK MORE THAN ONCE EVER
-   - Home Page: {community["community_primary_domain"]}
-   - About Page: {community["about_page"]}
-   - Contact Page: {community["contact_page"]}
-   - Floor Plan Page: {community["floor_plan_page"]}
-   - Dining Page: {community["dining_page"]}
-   - Gallery Page: {community["gallery_page"]}
-   - Health & Wellness Page: {community["health_wellness_page"]}
+1. Incorporate community-specific details naturally throughout the article.
+    Examples: community name, location, amenities, services, care areas, etc.
+2. Include relevant internal/contextual links using markdown format [text](url). To optimize internal SEO, include each link a maximum of once in the article.
+    Example: [Learn more about our dining options](https://community.com/dining)
+    Example: [Explore our floor plans](https://community.com/floor-plans)
 
-3. Reference specific care areas, amenities, and services available at this community
-4. Maintain the original article's SEO focus and keyword strategy
-5. Keep the same general structure but with community-specific examples and details
-
-FORMATTING INSTRUCTIONS:
-- Preserve any existing headers (## format)
-- Include internal links using markdown format [text](url)
-- Maintain professional tone while speaking directly to the community's specific audience
-
-Return only the revised article text with all formatting preserved.
+Please return only the revised article text.
 """
     
-    revised_article_text, token_usage, raw_response = query_llm_api(revision_prompt)
-    # costs = calculate_token_costs(token_usage)
+    response, token_usage, raw_response = query_llm_api(revision_prompt)
+    costs = 1
     
-    new_rev_title = f"{article_row['article_title']} - Community Revision for {community['community_name']}"
-    
-    try:
-        new_article_id = db.save_article_content(
-            project_id=project_id,
-            article_title=new_rev_title,
-            article_content=revised_article_text,
-            article_schema=None,
-            meta_title=article_row.get("meta_title", ""),
-            meta_description=article_row.get("meta_description", ""),
-        )
-        
-        # Update session
-        session['article_id'] = new_article_id
-        
-        # Update drafts in session
-        drafts = session.get('drafts_by_article', {})
-        drafts[str(new_article_id)] = revised_article_text
-        session['drafts_by_article'] = drafts
-        
-        return jsonify({
-            'success': True,
-            'article_id': new_article_id,
-            'revised_text': revised_article_text,
-            'token_usage': token_usage,
-            'costs': costs,
-            'raw_response': raw_response if session.get('debug_mode') else None
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    print("Response:", response)
+
+    return jsonify({
+        'article_content': response,
+        'token_usage': token_usage,
+        'costs': costs,
+        'raw_response': raw_response if session.get('debug_mode') else None
+    })
 
 @app.route('/communities/list')
 def list_communities():
@@ -968,10 +841,10 @@ def get_community_details(community_id):
     community = comm_manager.get_community(community_id)
     aliases = comm_manager.get_aliases(community_id)
     care_area_details = get_care_area_details(comm_manager, community_id)
-    
+
     return jsonify({
-        'community': community,
-        'aliases': aliases,
+        'community': dict(community),
+        'aliases': [dict(a) for a in aliases] if aliases else [],
         'care_area_details': care_area_details
     })
 

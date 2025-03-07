@@ -128,44 +128,6 @@ $(document).ready(function() {
         loadFinalArticle();
     }
 
-    // Generate meta content
-    $(document).on('click', '#generate-meta-btn', function() {
-        const btn = $(this);
-        const articleTitle = $('#final-article-title').val().trim();
-        const articleContent = $('#final-article-content').val().trim();
-        
-        if (!articleContent) {
-            alert('Article content is required to generate meta content.');
-            return;
-        }
-        
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...');
-        
-        $.ajax({
-            url: '/articles/generate_meta',
-            method: 'POST',
-            data: {
-                article_title: articleTitle,
-                article_content: articleContent
-            },
-            success: function(response) {
-                btn.prop('disabled', false).text('Generate Meta Content');
-                
-                if (response.error) {
-                    alert('Error: ' + response.error);
-                    return;
-                }
-                
-                // Refresh the page to show new meta content
-                window.location.reload();
-            },
-            error: function(xhr) {
-                btn.prop('disabled', false).text('Generate Meta Content');
-                alert('Failed to generate meta content: ' + xhr.responseText);
-            }
-        });
-    });
-
     // Save final article
     $(document).on('click', '#save-final-article-btn', function() {
         const btn = $(this);
@@ -361,6 +323,8 @@ $(document).ready(function() {
                         <p><strong>Location:</strong> ${community.city}, ${community.state}</p>
                         <p><strong>Primary Domain:</strong> ${community.community_primary_domain}</p>
                         <p><strong>Aliases:</strong> ${data.aliases.map(a => a.alias).join(', ') || 'None'}</p>
+                        <p><strong>Available Care Areas:</strong><p/>
+                        ${data.care_area_details}
                     </div>
                 </div>`;
                 

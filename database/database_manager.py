@@ -57,7 +57,7 @@ class DatabaseManager:
                     ON DELETE CASCADE
             );
 
-            CREATE TABLE IF NOT EXISTS base_article_content (
+            CREATE TABLE IF NOT EXISTS base_articles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
                 article_outline TEXT,
@@ -65,12 +65,24 @@ class DatabaseManager:
                 article_sections INTEGER,
                 article_title TEXT,
                 article_content TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS community_articles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                base_article_id INTEGER NOT NULL,
+                community_id INTEGER NOT NULL,
+                article_title TEXT,
+                article_content TEXT,
                 article_schema TEXT,
                 meta_title TEXT,
                 meta_description TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                FOREIGN KEY (base_article_id) REFERENCES base_articles(id) ON DELETE CASCADE
             );
             """
         )
@@ -225,7 +237,7 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    INSERT INTO base_article_content (
+                    INSERT INTO base_articles (
                         project_id, article_outline, article_length, article_sections, article_title, article_content, article_schema,
                         meta_title, meta_description,
                         created_at, updated_at
@@ -276,7 +288,7 @@ class DatabaseManager:
                 if article_id:
                     # First, get the current values to use as defaults for NULL values
                     cursor.execute(
-                        "SELECT * FROM base_article_content WHERE id = ?", 
+                        "SELECT * FROM base_articles WHERE id = ?", 
                         (article_id,)
                     )
                     current = cursor.fetchone()
@@ -299,7 +311,7 @@ class DatabaseManager:
                     # Now update with all fields populated
                     cursor.execute(
                         """
-                        UPDATE base_article_content
+                        UPDATE base_articles
                         SET
                             article_outline = ?,
                             article_length = ?,
@@ -338,7 +350,7 @@ class DatabaseManager:
                     # For new articles, insert with the values provided
                     cursor.execute(
                         """
-                        INSERT INTO base_article_content (
+                        INSERT INTO base_articles (
                             project_id, article_outline, article_length, article_sections, article_title, article_content, article_schema,
                             meta_title, meta_description,
                             created_at, updated_at
@@ -376,7 +388,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                UPDATE base_article_content
+                UPDATE base_articles
                 SET article_content = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
@@ -389,7 +401,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                UPDATE base_article_content
+                UPDATE base_articles
                 SET article_title = ?, article_outline = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
@@ -403,7 +415,7 @@ class DatabaseManager:
             cursor.execute(
                 """
                 SELECT id, article_title, meta_title, meta_description, article_content 
-                FROM base_article_content
+                FROM base_articles
                 WHERE project_id = ?
                 ORDER BY created_at DESC
                 """,
@@ -415,7 +427,7 @@ class DatabaseManager:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM base_article_content WHERE id = ?", (article_id,)
+                "SELECT * FROM base_articles WHERE id = ?", (article_id,)
             )
             return cursor.fetchone()
 
@@ -423,6 +435,6 @@ class DatabaseManager:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "DELETE FROM base_article_content WHERE id = ?", (article_id,)
+                "DELETE FROM base_articles WHERE id = ?", (article_id,)
             )
             conn.commit()
