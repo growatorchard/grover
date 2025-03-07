@@ -848,5 +848,50 @@ def get_community_details(community_id):
         'care_area_details': care_area_details
     })
 
+# create community article
+@app.route('/articles/create_community_article', methods=['POST'])
+def create_community_article():
+    
+    project_id = session.get('project_id')
+    if not project_id:
+        return jsonify({'error': 'No project selected'}), 400
+    
+    base_article_id = request.form.get('base_article_id')
+    if not base_article_id:
+        return jsonify({'error': 'No base article selected'}), 400
+    
+    community_id = request.form.get('community_id')
+    if not community_id:
+        return jsonify({'error': 'No community selected'}), 400
+    
+    try:
+        new_article_id = db.create_community_article(project_id, base_article_id, community_id)
+        session['article_id'] = new_article_id
+        return jsonify({'success': True, 'article_id': new_article_id})
+    except Exception as e:
+        app.logger.error(f"Error creating community article: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+
+@app.route('/articles/save_community_post_content', methods=['POST'])
+def save_community_post_content():
+    article_id = session.get('article_id')
+    if not article_id:
+        return jsonify({'error': 'No article selected'}), 400
+    
+    community_id = request.form.get('community_id')
+    if not community_id:
+        return jsonify({'error': 'No community selected'}), 400
+    
+    article_content = request.form.get('article_content', '')
+    
+    try:
+        db.save_community_post_content(article_id, community_id, article_content)
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error saving community article: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True)

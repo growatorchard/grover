@@ -438,3 +438,58 @@ class DatabaseManager:
                 "DELETE FROM base_articles WHERE id = ?", (article_id,)
             )
             conn.commit()
+
+    # Community Articles
+
+    def create_community_article(
+        self,
+        project_id,
+        base_article_id,
+        community_id,
+        article_title='',
+        article_content='',
+        article_schema=None,
+        meta_title='',
+        meta_description='',
+    ):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO community_articles (
+                    project_id, base_article_id, community_id, article_title, article_content, article_schema,
+                    meta_title, meta_description,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (
+                    project_id,
+                    base_article_id,
+                    community_id,
+                    article_title,
+                    article_content,
+                    (
+                        json.dumps(article_schema)
+                        if isinstance(article_schema, dict)
+                        else article_schema
+                    ),
+                    meta_title,
+                    meta_description,
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def save_community_post_content(self, community_article_id, article_content):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE community_articles
+                SET article_content = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (article_content, community_article_id),
+            )
+            conn.commit()
