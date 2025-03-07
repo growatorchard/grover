@@ -131,21 +131,15 @@ $(document).ready(function () {
     // Save final article
     $(document).on('click', '#save-final-article-btn', function () {
         const btn = $(this);
-        const articleTitle = $('#final-article-title').val().trim();
         const articleContent = $('#final-article-content').val().trim();
-        const metaTitle = $('#final-meta-title').val().trim();
-        const metaDesc = $('#final-meta-desc').val().trim();
 
         btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
 
         $.ajax({
-            url: '/articles/save',
+            url: '/articles/save_article_post_content',
             method: 'POST',
             data: {
-                article_title: articleTitle,
                 article_content: articleContent,
-                meta_title: metaTitle,
-                meta_description: metaDesc
             },
             success: function (response) {
                 btn.prop('disabled', false).text('Save Changes');

@@ -340,25 +340,12 @@ def update_article_settings():
     article_sections = int(request.form.get('article_sections', 5))
     
     try:
-        # Get current article to preserve any fields not being updated
-        article = db.get_article_content(article_id)
-        
-        # Only update content and metadata fields if they exist in the current article
-        article_content = article['article_content'] if 'article_content' in article else ''
-        meta_title = article['meta_title'] if 'meta_title' in article else ''
-        meta_description = article['meta_description'] if 'meta_description' in article else ''
-        
-        # Save everything in one operation
         db.save_article_content(
             project_id=session.get('project_id'),
             article_title=article_title,
             article_outline=article_outline,
             article_length=article_length,
             article_sections=article_sections,
-            article_content=article_content,
-            article_schema=None,
-            meta_title=meta_title,
-            meta_description=meta_description,
             article_id=article_id
         )
         
