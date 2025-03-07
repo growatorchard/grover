@@ -1,10 +1,24 @@
-def get_care_area_details(comm_manager, community_id):
-    """Get detailed information about care areas and their related data."""
+def get_care_area_details(comm_manager, community_id, selected_care_areas):
+    """Get detailed information about care areas and their related data.
+    
+    Args:
+        comm_manager: Community manager instance
+        community_id: ID of the community
+        selected_care_areas: List of care area names to include (e.g. ["Independent Living", "Assisted Living"])
+    """
     care_areas = comm_manager.get_care_areas(community_id)
     detailed_care_areas = []
 
+    # Normalize the selected care areas for case-insensitive comparison
+    normalized_selected_areas = [area.strip().lower() for area in selected_care_areas]
+    
     for care_area in care_areas:
         care_area = dict(care_area)
+        
+        # Only include care areas that match the selected ones
+        care_area_name = care_area.get('care_area', 'N/A')
+        if care_area_name.lower() not in normalized_selected_areas:
+            continue
         
         # Get floor plan details
         floor_plans = comm_manager.get_floor_plans(care_area["id"])
@@ -27,7 +41,7 @@ def get_care_area_details(comm_manager, community_id):
         # Constructing care area details with better spacing
         care_area_info = f"""
 ===================================================
-🏡 Care Area: {care_area.get('care_area', 'N/A')}
+🏡 Care Area: {care_area_name}
 ---------------------------------------------------
 📜 Description:
 {care_area.get('general_floor_plan_description', 'N/A')}

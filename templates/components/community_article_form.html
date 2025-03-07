@@ -27,6 +27,9 @@
             </select>
         </div>
 
+        <!-- Care Area Warning -->
+        <div id="care-area-warning" class="mb-3" style="display: none;"></div>
+
         <div id="community-details" class="mb-3" style="display: none;">
             <!-- Community details will be loaded here -->
         </div>
@@ -37,198 +40,6 @@
     </div>
 </div>
 
-<script>
-$(document).ready(function() {
-    // Load existing community articles
-    function loadCommunityArticles() {
-        $.ajax({
-            url: '/community_articles/list',
-            method: 'GET',
-            data: { base_article_id: {{ session.get('article_id') }} },
-            success: function(articles) {
-                const container = $('#community-articles-list');
-                
-                if (articles.length === 0) {
-                    container.html('<div class="alert alert-info">No community articles yet.</div>');
-                    return;
-                }
-                
-                let html = '<h6 class="mb-3">Existing Community Articles</h6>';
-                
-                articles.forEach(art => {
-                    html += `
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div>
-                            <strong>${art.community_name || 'Untitled'}</strong> (ID: ${art.id})
-                        </div>
-                        <div>
-                            <button type="button" class="btn btn-sm btn-danger delete-community-article me-2" data-article-id="${art.id}">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                            <button type="button" class="btn btn-sm btn-primary edit-community-article" data-article-id="${art.id}">
-                                Edit
-                            </button>
-                        </div>
-                    </div>`;
-                });
-                
-                container.html(html);
-            },
-            error: function(error) {
-                console.error('Error loading community articles:', error);
-                $('#community-articles-list').html('<div class="alert alert-danger">Failed to load community articles. Please try again.</div>');
-            }
-        });
-    }
-    
-    // Load initial community articles
-    loadCommunityArticles();
-    
-    // Load communities
-    $.ajax({
-        url: '/communities/list',
-        method: 'GET',
-        success: function(communities) {
-            const select = $('#community-select');
-            
-            if (communities.length === 0) {
-                select.html('<option value="">No communities available</option>');
-                return;
-            }
-            
-            select.find('option:not(:first)').remove();
-            
-            communities.forEach(function(community) {
-                select.append(`<option value="${community.id}">${community.community_name} (ID: ${community.id})</option>`);
-            });
-        },
-        error: function(error) {
-            console.error('Error loading communities:', error);
-            $('#community-select').html('<option value="">Error loading communities</option>');
-        }
-    });
-    
-    // Handle community selection
-    $('#community-select').change(function() {
-        const communityId = $(this).val();
-        const createBtn = $('#create-community-article-btn');
-        
-        if (!communityId) {
-            $('#community-details').hide();
-            createBtn.prop('disabled', true);
-            return;
-        }
-        
-        // Load community details
-        $.ajax({
-            url: `/communities/${communityId}`,
-            method: 'GET',
-            success: function(data) {
-                const community = data.community;
-                
-                let html = `
-                <div class="card">
-                    <div class="card-header">
-                        <h6 class="mb-0">Community Details</h6>
-                    </div>
-                    <div class="card-body">
-                        <p><strong>Name:</strong> ${community.community_name}</p>
-                        <p><strong>Location:</strong> ${community.city}, ${community.state}</p>
-                        <p><strong>Primary Domain:</strong> ${community.community_primary_domain}</p>
-                        <p><strong>Aliases:</strong> ${data.aliases.map(a => a.alias).join(', ') || 'None'}</p>
-                        <p><strong>Available Care Areas:</strong></p>
-                        ${data.care_area_details}
-                    </div>
-                </div>`;
-                
-                $('#community-details').html(html).show();
-                createBtn.prop('disabled', false);
-            },
-            error: function(error) {
-                console.error('Error loading community details:', error);
-                $('#community-details').html('<div class="alert alert-danger">Failed to load community details.</div>').show();
-                createBtn.prop('disabled', true);
-            }
-        });
-    });
-    
-    // Create community article
-    $('#create-community-article-btn').click(function() {
-        const btn = $(this);
-        const communityId = $('#community-select').val();
-        
-        if (!communityId) {
-            alert('Please select a community first.');
-            return;
-        }
-        
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Creating...');
-        
-        $.ajax({
-            url: '/community_articles/create',
-            method: 'POST',
-            data: {
-                community_id: communityId
-            },
-            success: function(response) {
-                if (response.error) {
-                    alert('Error: ' + response.error);
-                    btn.prop('disabled', false).text('Create Community Article');
-                    return;
-                }
-                
-                // Redirect to refresh the page with the new community article selected
-                window.location.href = '/';
-            },
-            error: function(xhr) {
-                alert('Failed to create community article: ' + xhr.responseText);
-                btn.prop('disabled', false).text('Create Community Article');
-            }
-        });
-    });
-    
-    // Handle community article deletion
-    $(document).on('click', '.delete-community-article', function() {
-        if (!confirm('Are you sure you want to delete this community article?')) {
-            return;
-        }
-        
-        const articleId = $(this).data('article-id');
-        
-        $.ajax({
-            url: '/community_articles/delete',
-            method: 'POST',
-            data: { community_article_id: articleId },
-            success: function() {
-                loadCommunityArticles();
-            },
-            error: function(xhr) {
-                alert('Failed to delete community article: ' + xhr.responseText);
-            }
-        });
-    });
-    
-    // Handle community article editing
-    $(document).on('click', '.edit-community-article', function() {
-        const articleId = $(this).data('article-id');
-        
-        // Post to select_community_article
-        $.ajax({
-            url: '/community_articles/select',
-            method: 'POST',
-            data: { community_article_id: articleId },
-            success: function() {
-                // Reload the page
-                window.location.reload();
-            },
-            error: function(xhr) {
-                alert('Failed to select community article: ' + xhr.responseText);
-            }
-        });
-    });
-});
-</script>
-
 {% else %}
 <!-- Edit Community Article -->
 <div class="card mb-4">
@@ -236,6 +47,9 @@ $(document).ready(function() {
         <h5 class="mb-0">Community Article - {{ current_community_article.community_name }}</h5>
     </div>
     <div class="card-body">
+        <!-- Error message container for community article generation -->
+        <div id="community-generation-error" class="mb-3" style="display: none;"></div>
+        
         <div class="mb-3">
             <label for="community-article-title" class="form-label">Article Title</label>
             <input type="text" class="form-control" id="community-article-title" name="article_title" 
@@ -248,78 +62,9 @@ $(document).ready(function() {
         </div>
         
         <div class="d-flex justify-content-between">
-            <button id="generate-community-content-btn" class="btn btn-primary">Generate Community-Specific Content</button>
+            <button id="generate-community-content-btn" class="btn btn-primary" data-community-id="{{ current_community_article.community_id }}">Generate Community-Specific Content</button>
             <button id="save-community-article-btn" class="btn btn-success">Save Changes</button>
         </div>
     </div>
 </div>
-
-<script>
-$(document).ready(function() {
-    // Generate community-specific content
-    $('#generate-community-content-btn').click(function() {
-        const btn = $(this);
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...');
-        
-        $.ajax({
-            url: '/articles/community_revision',
-            method: 'POST',
-            data: {
-                community_id: {{ current_community_article.community_id }}
-            },
-            success: function(response) {
-                btn.prop('disabled', false).text('Generate Community-Specific Content');
-                
-                if (response.error) {
-                    alert('Error: ' + response.error);
-                    return;
-                }
-                
-                // Update the content fields
-                $('#community-article-content').val(response.article_content);
-            },
-            error: function(xhr) {
-                btn.prop('disabled', false).text('Generate Community-Specific Content');
-                alert('Failed to generate community content: ' + xhr.responseText);
-            }
-        });
-    });
-    
-    // Save community article changes
-    $('#save-community-article-btn').click(function() {
-        const btn = $(this);
-        const articleTitle = $('#community-article-title').val().trim();
-        const articleContent = $('#community-article-content').val().trim();
-        
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
-        
-        $.ajax({
-            url: '/community_articles/save_content',
-            method: 'POST',
-            data: {
-                article_title: articleTitle,
-                article_content: articleContent
-            },
-            success: function(response) {
-                btn.prop('disabled', false).text('Save Changes');
-                
-                if (response.error) {
-                    alert('Error: ' + response.error);
-                    return;
-                }
-                
-                // Show success message
-                $('<div class="alert alert-success alert-dismissible fade show" role="alert">')
-                    .text('Community article saved successfully.')
-                    .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>')
-                    .insertAfter(btn.parent());
-            },
-            error: function(xhr) {
-                btn.prop('disabled', false).text('Save Changes');
-                alert('Failed to save community article: ' + xhr.responseText);
-            }
-        });
-    });
-});
-</script>
 {% endif %}

@@ -167,6 +167,8 @@ def create_project():
     new_id = db.create_project(project_data)
     if new_id:
         session['project_id'] = new_id
+        session['article_id'] = None
+        session['community_article_id'] = None
     
     return redirect(url_for('index'))
 
@@ -270,6 +272,9 @@ def create_article_settings():
     project_id = session.get('project_id')
     if not project_id:
         return jsonify({'error': 'No project selected'}), 400
+    
+    session['article_id'] = None
+    session['community_article_id'] = None
     
     article_length = int(request.form.get('article_length', 1000))
     article_sections = int(request.form.get('article_sections', 5))
@@ -786,7 +791,32 @@ def generate_community_revision():
     aliases = comm_manager.get_aliases(int(community_id))
     alias_list = [alias["alias"] for alias in aliases] if aliases else []
     aliases_text = ", ".join(alias_list) if alias_list else "None"
-    care_area_details_text = get_care_area_details(comm_manager, int(community_id))
+
+    selected_care_area_names = []
+    for area in care_areas_list:
+        # Split by comma in case some items contain multiple care areas
+        if ',' in area:
+            selected_care_area_names.extend([a.strip() for a in area.split(',')])
+        else:
+            selected_care_area_names.append(area.strip())
+    
+    # Validate if the community has all the selected care areas
+    community_care_areas = comm_manager.get_care_areas(int(community_id))
+    community_care_area_names = [dict(area).get('care_area', '').lower() for area in community_care_areas]
+    
+    missing_care_areas = []
+    for care_area in selected_care_area_names:
+        if care_area.lower() not in community_care_area_names:
+            missing_care_areas.append(care_area)
+    
+    if missing_care_areas:
+        missing_areas_str = ", ".join(missing_care_areas)
+        return jsonify({
+            'error': f"One or more of the selected care areas for the project do not exist for the selected community: {missing_areas_str}. Please select a different community that offers these care areas or update your project settings."
+        }), 400
+    
+    # Get details for only the selected care areas
+    care_area_details_text = get_care_area_details(comm_manager, int(community_id), selected_care_area_names)
     
     community_details_text = f"""
 - Name: {community["community_name"]}
@@ -807,7 +837,7 @@ Care areas, amenities, and services available at this community:
 """
     
     revision_prompt = f"""
-Please help me update the following article to be tailored to the following senior living community while maintaining the original article's core message, structure, quality, and SEO optimization.
+Please help me update the following article to be tailored to the following senior living community while maintaining the original article's core message, structure, quality, and SEO optimization. When using examples of offerings/services/amenities ensure they are actually available at the community. If something is not explicitly listed in the community details, you should not imply or state that it is available.
 
 MAIN TOPIC: {topic}
 REQUIRED KEYWORDS (must be used):
@@ -815,7 +845,7 @@ REQUIRED KEYWORDS (must be used):
 ARTICLE SPECIFICATIONS:
 1. Journey Stage: {journey_stage}
 2. Category: {category}
-3. Care Areas: {', '.join(care_areas_list)}
+3. Care Areas: {', '.join(selected_care_area_names)}
 4. Format Type: {format_type}
 5. Business Category: {business_cat}
 6. Consumer Need: {consumer_need}
@@ -833,7 +863,7 @@ REVISION REQUIREMENTS:
 1. Incorporate community-specific details naturally throughout the article. When using community-specific details, ensure they are accurate and from the details provided above. Do not imply or state any information not provided.
     Examples: community name, location, amenities, services, care areas, etc.
 2. Ensure the article is relevant and engaging for the target audience of this community.
-3. Include relevant internal/contextual links using markdown format [text](url). To optimize internal SEO, include each link a maximum of once in the article.
+3. Include relevant internal/contextual links using markdown format [text](url).
     Example: [Learn more about our dining options](https://community.com/dining)
     Example: [Explore our floor plans](https://community.com/floor-plans)
 
@@ -862,14 +892,70 @@ def list_communities():
 def get_community_details(community_id):
     community = comm_manager.get_community(community_id)
     aliases = comm_manager.get_aliases(community_id)
-    care_area_details = get_care_area_details(comm_manager, community_id)
-
-    return jsonify({
+    
+    # Get project care areas from the current project if one is selected
+    project_id = session.get('project_id')
+    selected_care_area_names = []
+    
+    if project_id:
+        try:
+            pinfo = db.get_project(project_id)
+            print(f"Project Info: {dict(pinfo)}")
+            
+            # CRITICAL FIX - Directly extract Skilled Nursing from the care_areas field
+            care_areas_raw = pinfo.get("care_areas", "")
+            print(f"Raw care_areas: {care_areas_raw!r}")
+            
+            # Try a very direct approach - using string searching instead of JSON parsing
+            if "Skilled Nursing" in care_areas_raw:
+                print("Found 'Skilled Nursing' in care_areas string!")
+                selected_care_area_names.append("Skilled Nursing")
+            
+            # Also try JSON parsing as a backup
+            try:
+                parsed_list = json.loads(care_areas_raw)
+                print(f"Parsed JSON: {parsed_list}")
+                
+                if isinstance(parsed_list, list):
+                    for item in parsed_list:
+                        if item not in selected_care_area_names:
+                            selected_care_area_names.append(item)
+                            print(f"Added {item} from JSON parsing")
+            except Exception as e:
+                print(f"JSON parsing error: {str(e)}")
+        except Exception as e:
+            print(f"Error getting project care areas: {str(e)}")
+    
+    print(f"Final selected_care_area_names: {selected_care_area_names}")
+    
+    # Get community care areas
+    community_care_areas = comm_manager.get_care_areas(community_id)
+    community_care_area_names = [dict(area).get('care_area', '') for area in community_care_areas]
+    
+    # Check for missing care areas
+    missing_care_areas = []
+    for project_area in selected_care_area_names:
+        print(f"Checking care area: {project_area}")
+        if not any(project_area.lower() == community_area.lower() for community_area in community_care_area_names):
+            print(f"Missing care area: {project_area}")
+            missing_care_areas.append(project_area)
+    
+    print(f"Community care area names: {community_care_area_names}")
+    print(f"Missing care areas: {missing_care_areas}")
+    
+    # Get care area details
+    care_area_details = get_care_area_details(comm_manager, community_id, selected_care_area_names)
+    
+    response_data = {
         'community': dict(community),
         'aliases': [dict(a) for a in aliases] if aliases else [],
-        'care_area_details': care_area_details
-    })
-
+        'care_area_details': care_area_details,
+        'community_care_areas': community_care_area_names,
+        'missing_care_areas': missing_care_areas,
+        'selected_care_areas': selected_care_area_names
+    }
+    
+    return jsonify(response_data)
 
 
 @app.route('/articles/save_community_post_content', methods=['POST'])
