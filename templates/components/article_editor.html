@@ -204,7 +204,6 @@
         });
 
         // Generate Full Article
-        // Generate Full Article with improved error handling
         $('#generate-article-btn').click(function () {
             const btn = $(this);
             btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...');
@@ -272,7 +271,7 @@
             btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
 
             $.ajax({
-                url: '{{ url_for('save_article_content') }}',
+                url: '{{ url_for('save_article_post_content') }}',
                 method: 'POST',
                 data: {
                     article_content: articleContent
@@ -361,7 +360,7 @@
             btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
 
             $.ajax({
-                url: '{{ url_for('save_article_content') }}',
+                url: '{{ url_for('save_article_post_content') }}',
                 method: 'POST',
                 data: {
                     article_content: refinedContent

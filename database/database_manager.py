@@ -368,6 +368,32 @@ class DatabaseManager:
                 print(f"Database error in save_article_content: {str(e)}")
                 raise e
 
+    def save_article_post_content(self, article_id, article_content):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE base_article_content
+                SET article_content = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (article_content, article_id),
+            )
+            conn.commit()
+
+    def save_article_title_outline(self, article_id, article_title, article_brief):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE base_article_content
+                SET article_title = ?, article_brief = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (article_title, article_brief, article_id),
+            )
+            conn.commit()
+
     def get_all_articles_for_project(self, project_id):
         with self.get_connection() as conn:
             cursor = conn.cursor()

@@ -477,59 +477,104 @@ Return ONLY a JSON object with this structure:
         print("Raw response:", response)
         return jsonify({'error': str(e)}), 500
     
+# @app.route('/articles/save_title_outline', methods=['POST'])
+# def save_article_title_outline():
+#     """Save the generated title and outline to the current article."""
+#     article_id = session.get('article_id')
+#     if not article_id:
+#         return jsonify({'error': 'No article selected'}), 400
+    
+#     article_title = request.form.get('article_title', '')
+#     article_brief = request.form.get('article_brief', '')
+    
+#     if not article_title or not article_brief:
+#         return jsonify({'error': 'Title and outline are required'}), 400
+    
+#     try:
+#         # Get current article data
+#         article = db.get_article_content(article_id)
+        
+#         # Access properties directly using dictionary-style access (if article is a dict)
+#         # or using attribute access (if article is an object)
+#         try:
+#             article_length = article['article_length'] if 'article_length' in article else 1000
+#             article_sections = article['article_sections'] if 'article_sections' in article else 5
+#             article_content = article['article_content'] if 'article_content' in article else ''
+#             meta_title = article['meta_title'] if 'meta_title' in article else ''
+#             meta_description = article['meta_description'] if 'meta_description' in article else ''
+#         except (TypeError, KeyError):
+#             # Fallback if article doesn't have these attributes
+#             article_length = 1000
+#             article_sections = 5
+#             article_content = ''
+#             meta_title = ''
+#             meta_description = ''
+        
+#         # Update title and brief
+#         db.save_article_content(
+#             project_id=session.get('project_id'),
+#             article_title=article_title,
+#             article_content=article_content,
+#             article_schema=None,
+#             meta_title=meta_title,
+#             meta_description=meta_description,
+#             article_id=article_id,
+#             article_brief=article_brief,
+#             article_length=article_length,
+#             article_sections=article_sections
+#         )
+        
+#         return jsonify({
+#             'success': True,
+#             'message': 'Title and outline saved successfully'
+#         })
+#     except Exception as e:
+#         app.logger.error(f"Error saving article title and outline: {str(e)}")
+#         return jsonify({'error': str(e)}), 500
+
 @app.route('/articles/save_title_outline', methods=['POST'])
 def save_article_title_outline():
-    """Save the generated title and outline to the current article."""
+    """Save the article outline and title"""
+    project_id = session.get('project_id')
     article_id = session.get('article_id')
-    if not article_id:
-        return jsonify({'error': 'No article selected'}), 400
-    
+    if not project_id or not article_id:
+        return jsonify({'error': 'No project or article selected'}), 400
+
     article_title = request.form.get('article_title', '')
     article_brief = request.form.get('article_brief', '')
-    
-    if not article_title or not article_brief:
-        return jsonify({'error': 'Title and outline are required'}), 400
-    
+
     try:
-        # Get current article data
-        article = db.get_article_content(article_id)
-        
-        # Access properties directly using dictionary-style access (if article is a dict)
-        # or using attribute access (if article is an object)
-        try:
-            article_length = article['article_length'] if 'article_length' in article else 1000
-            article_sections = article['article_sections'] if 'article_sections' in article else 5
-            article_content = article['article_content'] if 'article_content' in article else ''
-            meta_title = article['meta_title'] if 'meta_title' in article else ''
-            meta_description = article['meta_description'] if 'meta_description' in article else ''
-        except (TypeError, KeyError):
-            # Fallback if article doesn't have these attributes
-            article_length = 1000
-            article_sections = 5
-            article_content = ''
-            meta_title = ''
-            meta_description = ''
-        
-        # Update title and brief
-        db.save_article_content(
-            project_id=session.get('project_id'),
+        saved_id = db.save_article_title_outline(
             article_title=article_title,
-            article_content=article_content,
-            article_schema=None,
-            meta_title=meta_title,
-            meta_description=meta_description,
-            article_id=article_id,
             article_brief=article_brief,
-            article_length=article_length,
-            article_sections=article_sections
+            article_id=article_id
         )
         
-        return jsonify({
-            'success': True,
-            'message': 'Title and outline saved successfully'
-        })
+        return jsonify({'success': True, 'article_id': saved_id})
     except Exception as e:
         app.logger.error(f"Error saving article title and outline: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+    
+@app.route('/articles/save_article_post_content', methods=['POST'])
+def save_article_post_content():
+    """Save the article post content"""
+    project_id = session.get('project_id')
+    article_id = session.get('article_id')
+    if not project_id or not article_id:
+        return jsonify({'error': 'No project or article selected'}), 400
+
+    article_content = request.form.get('article_content', '')
+    
+    try:
+        saved_id = db.save_article_post_content(
+            article_content=article_content,
+            article_id=article_id
+        )
+        
+        return jsonify({'success': True, 'article_id': saved_id})
+    except Exception as e:
+        app.logger.error(f"Error saving article: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/articles/save', methods=['POST'])
