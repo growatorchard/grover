@@ -105,10 +105,6 @@ $(document).ready(function() {
                 }
                 
                 let html = `
-                <div class="mb-3">
-                    <label for="final-article-title" class="form-label">Article Title</label>
-                    <input type="text" class="form-control" id="final-article-title" name="article_title" value="${article.article_title || ''}">
-                </div>
                 
                 <div class="mb-3">
                     <label for="final-article-content" class="form-label">Article Content</label>
@@ -116,17 +112,6 @@ $(document).ready(function() {
                 </div>
                 
                 <div class="mb-3">
-                    <label for="final-meta-title" class="form-label">Meta Title</label>
-                    <textarea class="form-control" id="final-meta-title" name="meta_title" rows="2">${article.meta_title || ''}</textarea>
-                </div>
-                
-                <div class="mb-3">
-                    <label for="final-meta-desc" class="form-label">Meta Description</label>
-                    <textarea class="form-control" id="final-meta-desc" name="meta_description" rows="3">${article.meta_description || ''}</textarea>
-                </div>
-                
-                <div class="mb-3">
-                    <button id="generate-meta-btn" class="btn btn-primary">Generate Meta Content</button>
                     <button id="save-final-article-btn" class="btn btn-success ms-2">Save Changes</button>
                 </div>`;
                 
@@ -228,7 +213,7 @@ $(document).ready(function() {
             method: 'GET',
             success: function(article) {
                 if (!article) {
-                    $('#view-article-container').html('<div class="alert alert-info">No article data available.</div>');
+                    $('#preview-article-container').html('<div class="alert alert-info">No article data available.</div>');
                     return;
                 }
                 
@@ -236,16 +221,6 @@ $(document).ready(function() {
                 <div class="mb-3">
                     <h5>Title</h5>
                     <p class="border p-2 bg-light">${article.article_title || 'Untitled'}</p>
-                </div>
-                
-                <div class="mb-3">
-                    <h5>Meta Title</h5>
-                    <p class="border p-2 bg-light">${article.meta_title || 'No meta title available'}</p>
-                </div>
-                
-                <div class="mb-3">
-                    <h5>Meta Description</h5>
-                    <p class="border p-2 bg-light">${article.meta_description || 'No meta description available'}</p>
                 </div>
                 
                 <div class="mb-3">
@@ -259,10 +234,10 @@ $(document).ready(function() {
                     <button id="copy-markdown-btn" class="btn btn-primary">Copy Raw Markdown</button>
                 </div>`;
                 
-                $('#view-article-container').html(html);
+                $('#preview-article-container').html(html);
             },
             error: function() {
-                $('#view-article-container').html('<div class="alert alert-danger">Failed to load article data.</div>');
+                $('#preview-article-container').html('<div class="alert alert-danger">Failed to load article data.</div>');
             }
         });
     }
@@ -282,7 +257,7 @@ $(document).ready(function() {
     }
 
     // Load view article if on the main page
-    if ($('#view-article-container').length > 0) {
+    if ($('#preview-article-container').length > 0) {
         loadViewArticle();
     }
 

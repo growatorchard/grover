@@ -60,7 +60,7 @@ class DatabaseManager:
             CREATE TABLE IF NOT EXISTS base_article_content (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
-                article_brief TEXT,
+                article_outline TEXT,
                 article_length INTEGER,
                 article_sections INTEGER,
                 article_title TEXT,
@@ -76,6 +76,7 @@ class DatabaseManager:
         )
         self.conn.commit()
 
+    # Projects
     def create_project(self, project_data):
         current_time = datetime.now().isoformat()
         self.cursor.execute(
@@ -175,6 +176,7 @@ class DatabaseManager:
             cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
             return cursor.rowcount > 0
 
+    # Keywords
     def add_keyword(
         self, project_id, keyword, search_volume, search_intent, keyword_difficulty
     ):
@@ -202,10 +204,11 @@ class DatabaseManager:
             cursor.execute("DELETE FROM keywords WHERE id = ?", (keyword_id,))
             return cursor.rowcount > 0
 
+    # Articles
     def create_article_content(
         self,
         project_id,
-        article_brief='',
+        article_outline='',
         article_length=None,
         article_sections=None,
         article_title='',
@@ -223,7 +226,7 @@ class DatabaseManager:
                 cursor.execute(
                     """
                     INSERT INTO base_article_content (
-                        project_id, article_brief, article_length, article_sections, article_title, article_content, article_schema,
+                        project_id, article_outline, article_length, article_sections, article_title, article_content, article_schema,
                         meta_title, meta_description,
                         created_at, updated_at
                     )
@@ -231,7 +234,7 @@ class DatabaseManager:
                     """,
                     (
                         project_id,
-                        article_brief,
+                        article_outline,
                         article_length,
                         article_sections,
                         article_title,
@@ -254,7 +257,7 @@ class DatabaseManager:
     def save_article_content(
         self,
         project_id,
-        article_brief=None,
+        article_outline=None,
         article_length=None,
         article_sections=None,
         article_title=None,
@@ -284,7 +287,7 @@ class DatabaseManager:
                         )
                     
                     # Use existing values for any NULL parameters
-                    article_brief = article_brief if article_brief is not None else current['article_brief']
+                    article_outline = article_outline if article_outline is not None else current['article_outline']
                     article_length = article_length if article_length is not None else current['article_length']
                     article_sections = article_sections if article_sections is not None else current['article_sections']
                     article_title = article_title if article_title is not None else current['article_title']
@@ -298,7 +301,7 @@ class DatabaseManager:
                         """
                         UPDATE base_article_content
                         SET
-                            article_brief = ?,
+                            article_outline = ?,
                             article_length = ?,
                             article_sections = ?,
                             article_title = ?,
@@ -310,7 +313,7 @@ class DatabaseManager:
                         WHERE id = ? AND project_id = ?
                         """,
                         (
-                            article_brief,
+                            article_outline,
                             article_length,
                             article_sections,
                             article_title,
@@ -336,7 +339,7 @@ class DatabaseManager:
                     cursor.execute(
                         """
                         INSERT INTO base_article_content (
-                            project_id, article_brief, article_length, article_sections, article_title, article_content, article_schema,
+                            project_id, article_outline, article_length, article_sections, article_title, article_content, article_schema,
                             meta_title, meta_description,
                             created_at, updated_at
                         )
@@ -344,7 +347,7 @@ class DatabaseManager:
                         """,
                         (
                             project_id,
-                            article_brief,
+                            article_outline,
                             article_length,
                             article_sections,
                             article_title,
@@ -381,16 +384,16 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def save_article_title_outline(self, article_id, article_title, article_brief):
+    def save_article_title_outline(self, article_id, article_title, article_outline):
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
                 UPDATE base_article_content
-                SET article_title = ?, article_brief = ?, updated_at = CURRENT_TIMESTAMP
+                SET article_title = ?, article_outline = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
-                (article_title, article_brief, article_id),
+                (article_title, article_outline, article_id),
             )
             conn.commit()
 

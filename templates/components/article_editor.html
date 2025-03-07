@@ -171,7 +171,7 @@
 
             // Update the article form fields if they exist
             $('#article-title').val(generatedTitle);
-            $('#article-brief').val(generatedOutline);
+            $('#article-outline').val(generatedOutline);
 
             // Also save to database
             $.ajax({
@@ -179,7 +179,7 @@
                 method: 'POST',
                 data: {
                     article_title: generatedTitle,
-                    article_brief: generatedOutline
+                    article_outline: generatedOutline
                 },
                 success: function (response) {
                     btn.prop('disabled', false).text('Save Title & Outline');

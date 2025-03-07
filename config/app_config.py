@@ -8,7 +8,7 @@ class AppConfig:
         "refine_instructions_by_article": {},
         "topic_suggestions": [],
         "selected_topic": "",
-        "article_brief": "",
+        "article_outline": "",
         "token_usage_history": [],
         "show_project_success": False,
         "project_id": None,

@@ -288,7 +288,7 @@ def list_articles():
             formatted_articles.append({
                 'id': article['id'],
                 'article_title': article['article_title'],
-                'article_brief': article['article_brief'],
+                'article_outline': article['article_outline'],
                 'article_length': article['article_length'],
                 'article_sections': article['article_sections'],
                 'created_at': article['created_at'].isoformat() if hasattr(article['created_at'], 'isoformat') else article['created_at'],
@@ -309,7 +309,7 @@ def update_article_settings():
     
     # Get all form data
     article_title = request.form.get('article_title', '')
-    article_brief = request.form.get('article_brief', '')
+    article_outline = request.form.get('article_outline', '')
     article_length = int(request.form.get('article_length', 1000))
     article_sections = int(request.form.get('article_sections', 5))
     
@@ -326,7 +326,7 @@ def update_article_settings():
         db.save_article_content(
             project_id=session.get('project_id'),
             article_title=article_title,
-            article_brief=article_brief,
+            article_outline=article_outline,
             article_length=article_length,
             article_sections=article_sections,
             article_content=article_content,
@@ -394,7 +394,7 @@ def generate_article_title_outline():
     target_audiences = json.loads(pinfo["target_audiences"])
     topic = pinfo["topic"]
 
-    article_brief = ainfo["article_brief"]
+    article_outline = ainfo["article_outline"]
     article_desired_word_count = ainfo["article_length"]
     article_desired_sections = ainfo["article_sections"]
     
@@ -413,7 +413,7 @@ ARTICLE SPECIFICATIONS:
 7. Tone of Voice: {tone_of_voice}
 8. Target Audiences: {', '.join(target_audiences)}
 ARTICLE BRIEF:
-{article_brief}
+{article_outline}
 
 DESIRED WORD COUNT: {article_desired_word_count}
 DESIRED SECTIONS: {article_desired_sections}
@@ -485,9 +485,9 @@ Return ONLY a JSON object with this structure:
 #         return jsonify({'error': 'No article selected'}), 400
     
 #     article_title = request.form.get('article_title', '')
-#     article_brief = request.form.get('article_brief', '')
+#     article_outline = request.form.get('article_outline', '')
     
-#     if not article_title or not article_brief:
+#     if not article_title or not article_outline:
 #         return jsonify({'error': 'Title and outline are required'}), 400
     
 #     try:
@@ -519,7 +519,7 @@ Return ONLY a JSON object with this structure:
 #             meta_title=meta_title,
 #             meta_description=meta_description,
 #             article_id=article_id,
-#             article_brief=article_brief,
+#             article_outline=article_outline,
 #             article_length=article_length,
 #             article_sections=article_sections
 #         )
@@ -541,12 +541,12 @@ def save_article_title_outline():
         return jsonify({'error': 'No project or article selected'}), 400
 
     article_title = request.form.get('article_title', '')
-    article_brief = request.form.get('article_brief', '')
+    article_outline = request.form.get('article_outline', '')
 
     try:
         saved_id = db.save_article_title_outline(
             article_title=article_title,
-            article_brief=article_brief,
+            article_outline=article_outline,
             article_id=article_id
         )
         
@@ -594,7 +594,7 @@ def save_article_content():
         # Get the values from the article object, with defaults if missing
         try:
             article_title = article['article_title'] if 'article_title' in article else ''
-            article_brief = article['article_brief'] if 'article_brief' in article else ''
+            article_outline = article['article_outline'] if 'article_outline' in article else ''
             article_length = article['article_length'] if 'article_length' in article else 1000
             article_sections = article['article_sections'] if 'article_sections' in article else 5
             meta_title = article['meta_title'] if 'meta_title' in article else ''
@@ -602,7 +602,7 @@ def save_article_content():
         except (TypeError, KeyError):
             # Fallback values if article doesn't have these attributes
             article_title = ''
-            article_brief = ''
+            article_outline = ''
             article_length = 1000
             article_sections = 5
             meta_title = ''
@@ -612,7 +612,7 @@ def save_article_content():
         saved_id = db.save_article_content(
             project_id=project_id,
             article_title=article_title, 
-            article_brief=article_brief,
+            article_outline=article_outline,
             article_length=article_length,
             article_sections=article_sections,
             article_content=article_content,
@@ -670,7 +670,7 @@ def generate_article_content():
     target_audiences = json.loads(pinfo["target_audiences"])
     topic = pinfo["topic"]
 
-    article_brief = ainfo["article_brief"]
+    article_outline = ainfo["article_outline"]
     article_desired_word_count = ainfo["article_length"]
     article_title = ainfo["article_title"]
     
@@ -690,7 +690,7 @@ ARTICLE SPECIFICATIONS:
 
 ARTICLE TITLE: {article_title}
 
-ARTICLE OUTLINE: {article_brief}
+ARTICLE OUTLINE: {article_outline}
 
 DESIRED WORD COUNT: {article_desired_word_count}
 
