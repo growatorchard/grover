@@ -57,10 +57,6 @@ def get_care_area_details(comm_manager, community_id, selected_care_areas):
             elif saa_type == "amenity":
                 amenities.append(description)
         
-        # Format key amenities and services highlights - limit to first 5 of each
-        key_services = services[:5] if services else ["None listed"]
-        key_amenities = amenities[:5] if amenities else ["None listed"]
-        
         # Format all amenities and services for list
         amenities_services_list = []
         if services:

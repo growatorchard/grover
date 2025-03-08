@@ -822,11 +822,12 @@ def generate_community_revision():
 ### **Care Areas & Pricing**
 {care_area_details_text}
 
-## **Special Requests & Additional Notes**  
-- **Do not exceed 1 use of community links.**  
-- **Ensure all pricing, service, and amenity details are accurate** and match the provided details.  
-- **Do not add generic senior living services** that are not explicitly listed for this community.  
-- If the original article **does not have a strong conclusion**, please add a **CTA encouraging readers to explore the community or schedule a visit.**  
+## **Special Requests & Additional Notes**
+- **Ensure all pricing, service, and amenity details are accurate** and match the provided details.
+- **Do not add generic senior living services** that are not explicitly listed for this community.
+- **Each website URL should only be used once** to prevent excessive linking.
+- If a care area URL is **None**, or not provided, **do not include a link** for that care area.
+- If the original article **does not have a strong conclusion**, please add a **CTA encouraging readers to explore the community or schedule a visit.**
 """
     
     revision_prompt = f"""
@@ -852,17 +853,18 @@ ARTICLE SPECIFICATIONS:
 - Maintain the original article's **structure, core message, and SEO quality** while integrating accurate details about the specified community.
 - **Do not add or imply** services, amenities, or offerings that are not explicitly listed in the provided community details.
 - Ensure the article is **relevant and engaging** for the target audience of this specific community.
+- Headings and subheadings may be adjusted to better align with the community's unique offerings and branding while maintaining clarity and readability.
 
 ### ✅ **SEO & Keyword Requirements**
 - **Required Keywords (must be used):**
    - {kw_str}
 - Keywords should be **naturally integrated** and **not forced** within the content.
 - **Internal Linking:**
-  - Use **Markdown format** for internal links, e.g., `[Dining Options](https://community.com/dining/)`.
-  - **Each community URL should only be used once** to prevent excessive linking.
+  - Use **Markdown format** for internal links, e.g., `[Dining Options](https://community.com/dining/), [independent living](https://community.com/independent-living/)`.
+  - **Each website URL should only be used once** to prevent excessive linking.
 
 ### ✅ **Formatting Preferences**
-- Maintain **clear headings and subheadings** for readability.
+- Maintain **clear headings and subheadings** for readability, but they may be customized to better match the community's branding and services.
 - Include **bullet points** where appropriate for clarity and engagement.
 - Ensure **CTA (Call to Action)** is placed at the end, encouraging readers to learn more or schedule a visit.
 
