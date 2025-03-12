@@ -414,27 +414,30 @@ def generate_article_title_outline():
     
     context_msg = f"""
 MAIN TOPIC: {topic}
-REQUIRED KEYWORDS (must be used):
-{kw_str}
 ARTICLE SPECIFICATIONS:
-1. Journey Stage: {journey_stage}
-2. Category: {category}
-3. Care Areas: {', '.join(care_areas_list)}
-4. Format Type: {format_type}
-5. Business Category: {business_cat}
-6. Consumer Need: {consumer_need}
-7. Tone of Voice: {tone_of_voice}
-8. Target Audiences: {', '.join(target_audiences)}
-ARTICLE BRIEF:
-{article_outline}
+- **Customer Journey Stage:** {journey_stage}
+- **Article Category:** {category}
+- **Care Areas:** {', '.join(care_areas_list)}
+- **Article Format Type:** {format_type}
+- **Business Category:** {business_cat}
+- **Consumer Need:** {consumer_need}
+- **Tone of Voice:** {tone_of_voice}
+- **Target Audience:** {', '.join(target_audiences)}
+- **Desired Word Count:** {article_desired_word_count}
+- **Desired Number of Sections:** {article_desired_sections}
 
-DESIRED WORD COUNT: {article_desired_word_count}
-DESIRED SECTIONS: {article_desired_sections}
+### ✅ **SEO & Keyword Requirements**
+- **Required Keywords (must be used, or able to be used within the article content):**
+    - {kw_str}
+
+### ✅ **Formatting Preferences**
+- Maintain **clear headings and subheadings** for readability.
+- Ensure **CTA (Call to Action)** is placed at the end, encouraging readers to learn more or schedule a visit.
 """
 
     full_article_prompt = f"""
-Generate a comprehensive article title and outline based on the following information:
-ARTICLE BRIEF:
+- **Purpose:** Generate an article title and outline based on the provided specifications with a focus on SEO, readability, and engagement.
+ARTICLE SPECIFICATIONS:
 {context_msg}
 Return ONLY a JSON object with this structure:
 {{
@@ -579,31 +582,35 @@ def generate_article_content():
     
     context_msg = f"""
 MAIN TOPIC: {topic}
-REQUIRED KEYWORDS (must be used):
-{kw_str}
 ARTICLE SPECIFICATIONS:
-1. Journey Stage: {journey_stage}
-2. Category: {category}
-3. Care Areas: {', '.join(care_areas_list)}
-4. Format Type: {format_type}
-5. Business Category: {business_cat}
-6. Consumer Need: {consumer_need}
-7. Tone of Voice: {tone_of_voice}
-8. Target Audiences: {', '.join(target_audiences)}
+- **Customer Journey Stage:** {journey_stage}
+- **Article Category:** {category}
+- **Care Areas:** {', '.join(care_areas_list)}
+- **Article Format Type:** {format_type}
+- **Business Category:** {business_cat}
+- **Consumer Need:** {consumer_need}
+- **Tone of Voice:** {tone_of_voice}
+- **Target Audience:** {', '.join(target_audiences)}
+- **Desired Word Count:** {article_desired_word_count}
+
+### ✅ **SEO & Keyword Requirements**
+- **Required Keywords (must be used):**
+   - {kw_str}
+- Keywords should be **naturally integrated** and **not forced** within the content.
+
+### ✅ **Formatting Preferences**
+- Maintain **clear headings and subheadings** for readability.
+- Include **bullet points** where appropriate for clarity and engagement.
+- Ensure **CTA (Call to Action)** is placed at the end, encouraging readers to learn more or schedule a visit.
 
 ARTICLE TITLE: {article_title}
 
 ARTICLE OUTLINE: {article_outline}
-
-DESIRED WORD COUNT: {article_desired_word_count}
-
-Please generate a complete article based on the above information. The article should be well-structured, informative, and engaging, with a focus on the target audience and SEO keywords provided.
-
 """
     
     full_article_prompt = f"""
-Generate a complete article based on the following information:
-ARTICLE BRIEF:
+Please generate a complete article in markdown format based on the above information. The article should be well-structured, informative, and engaging, with a focus on the target audience and SEO keywords provided.
+ARTICLE SPECIFICATIONS:
 {context_msg}
 Return ONLY the article content text.
 """
