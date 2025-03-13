@@ -1,19 +1,23 @@
-version: '3.8'
-
 services:
   grover:
     build: .
     container_name: grover-app
-    ports:
-      - "8501:8501"
     volumes:
-      - ./.streamlit:/app/.streamlit
-      - ./data:/app/data  # If you have a data directory
-    environment:
-      - TZ=UTC
+      - grover_db_data:/data
+    env_file:
+      - .env  # Load environment variables
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3 
+    ports:
+      - "8003:5000"
+    networks:
+      - grover_apps_shared_network
+
+networks:
+  grover_apps_shared_network:
+    external: true
+
+volumes:
+  grover_db_data:
+
+
+

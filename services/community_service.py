@@ -1,39 +1,86 @@
-import json
-
-def get_care_area_details(comm_manager, community_id):
-    """Get detailed information about care areas and their related data."""
+def get_care_area_details(comm_manager, community_id, selected_care_areas):
+    """Get detailed information about care areas and their related data.
+    
+    Args:
+        comm_manager: Community manager instance
+        community_id: ID of the community
+        selected_care_areas: List of care area names to include (e.g. ["Independent Living", "Assisted Living"])
+    """
+    print(f"Getting detailed care area information for community ID: {community_id}")
     care_areas = comm_manager.get_care_areas(community_id)
     detailed_care_areas = []
+
+    # If no specific care areas are selected, include all of them
+    if not selected_care_areas:
+        selected_care_areas = []
+        print("No care areas selected, will include all")
+
+    # Normalize the selected care areas for case-insensitive comparison
+    normalized_selected_areas = [area.strip().lower() for area in selected_care_areas]
+    print(f"Selected care areas: {selected_care_areas}")
+    print(f"Normalized selected areas: {normalized_selected_areas}")
+    
     for care_area in care_areas:
         care_area = dict(care_area)
+        care_area_name = care_area.get('care_area', 'N/A')
+        print(f"Examining care area: {care_area_name}")
+        
+        # Only include care areas that match the selected ones, or include all if none selected
+        if normalized_selected_areas and care_area_name.lower() not in normalized_selected_areas:
+            print(f"Skipping care area '{care_area_name}' as it's not in the selected list")
+            continue
+        
+        print(f"Processing care area: {care_area_name}")
+        
+        # Get floor plan details
         floor_plans = comm_manager.get_floor_plans(care_area["id"])
         floor_plan_details = []
         for fp in floor_plans:
             fp = dict(fp)
             floor_plan_details.append(
-                f"- {fp.get('name', 'N/A')}: {fp.get('bedrooms', 'N/A')} bed/{fp.get('bathrooms', 'N/A')} bath, {fp.get('square_footage', 'N/A')} sq ft"
+                f"  - {fp.get('name', 'N/A')}: {fp.get('bedrooms', 'N/A')} bed / {fp.get('bathrooms', 'N/A')} bath, "
+                f"{fp.get('square_footage', 'N/A')} sq ft"
             )
+
+        # Get services/activities/amenities
         saas = comm_manager.get_saas(care_area["id"])
-        saa_by_type = {}
+        services = []
+        amenities = []
+        
         for saa in saas:
             saa = dict(saa)
-            saa_type = saa.get("type", "Other")
-            if saa_type not in saa_by_type:
-                saa_by_type[saa_type] = []
-            saa_by_type[saa_type].append(saa.get("description", ""))
-        care_area_info = f"""
-Care Area: {care_area.get('care_area', 'N/A')}
-Description: {care_area.get('general_floor_plan_description', 'N/A')}
-Starting Price: ${care_area.get('floor_plan_starting_at_price', 'N/A')} {care_area.get('floor_plan_billing_period', 'N/A')}
-Care Area URL: {care_area.get('care_area_url', 'N/A')}
+            saa_type = saa.get("type", "Other").lower()
+            description = saa.get("description", "N/A")
+            
+            if saa_type == "service":
+                services.append(description)
+            elif saa_type == "amenity":
+                amenities.append(description)
+        
+        # Format all amenities and services for list
+        amenities_services_list = []
+        if services:
+            amenities_services_list.extend([f"**Service:** {s}" for s in services[:3]])
+        if amenities:
+            amenities_services_list.extend([f"**Amenity:** {a}" for a in amenities[:3]])
+        
+        # Create floor plan text
+        if floor_plan_details:
+            floor_plan_text = ", ".join([fp.strip().replace("  - ", "") for fp in floor_plan_details[:3]])
+        else:
+            floor_plan_text = "None listed"
 
-Available Floor Plans:
-{chr(10).join(floor_plan_details) if floor_plan_details else 'None'}
+        # New markdown-formatted care area info
+        care_area_info = f"""
+#### 🏡 **{care_area_name}**  
+- **Starting Price:** ${care_area.get('floor_plan_starting_at_price', 'N/A')} {care_area.get('floor_plan_billing_period', 'N/A')}  
+- **Available Floor Plans:** {floor_plan_text}  
+- **Key Amenities & Services:** {', '.join(amenities_services_list[:5]) if amenities_services_list else 'None listed'}  
+- **More Info:** [{care_area_name}]({care_area.get('care_area_url', '#')})  
 """
-        if saa_by_type:
-            care_area_info += "\nServices/Activities/Amenities:\n"
-            for saa_type, descriptions in saa_by_type.items():
-                care_area_info += f"{saa_type.title()}:\n"
-                care_area_info += "\n".join(f"- {desc}" for desc in descriptions) + "\n"
+
         detailed_care_areas.append(care_area_info)
-    return "\n\n".join(detailed_care_areas) 
+        print(f"Added formatted care area: {care_area_name}")
+
+    # Join all care area details with a newline
+    return "\n".join(detailed_care_areas)

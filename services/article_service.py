@@ -1,6 +1,4 @@
-from typing import Tuple, Optional, Dict, Any
-import streamlit as st
-import json
+from typing import Tuple
 from database.database_manager import DatabaseManager
 from services.state_service import StateService
 from services.llm_service import generate_meta_content
@@ -61,3 +59,35 @@ class ArticleService:
         except Exception as e:
             st.error(f"Error generating meta content: {str(e)}")
             return False 
+        
+
+    def autosave_final_article():
+        """Automatically save article content to database when changes are made."""
+        article_id = st.session_state.get("article_id")
+        project_id = st.session_state.get("project_id")
+        
+        if article_id and project_id:
+            updated_title = st.session_state.get("final_title", "")
+            updated_text = st.session_state.get("final_article", "")
+            updated_meta_title = st.session_state.get("final_meta_title", "")
+            updated_meta_desc = st.session_state.get("final_meta_desc", "")
+            
+            try:
+                saved_id = db.save_article_content(
+                    project_id=project_id,
+                    article_title=updated_title or "Auto-Generated Title",
+                    article_content=updated_text,
+                    article_schema=None,
+                    meta_title=updated_meta_title,
+                    meta_description=updated_meta_desc,
+                    article_id=article_id,
+                )
+                st.session_state["article_id"] = saved_id
+                
+                # Update the drafts in session state
+                if "drafts_by_article" not in st.session_state:
+                    st.session_state["drafts_by_article"] = {}
+                st.session_state["drafts_by_article"][article_id] = updated_text
+                
+            except Exception as e:
+                st.error(f"Error saving article: {str(e)}")

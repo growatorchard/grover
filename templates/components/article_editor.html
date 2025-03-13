@@ -1,0 +1,300 @@
+<!-- Generate Title & Outline Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Generate Article Title & Outline</h5>
+    </div>
+    <div class="card-body">
+        <button id="generate-title-outline-btn" class="btn btn-primary">Generate Article Title & Outline</button>
+
+        <div id="title-outline-results" class="mt-3" style="display: none;">
+            <div class="mb-3">
+                <h6>Article Title:</h6>
+                <div id="article-title-result" class="p-2 bg-light border rounded"></div>
+            </div>
+
+            <div class="mb-3">
+                <h6>Article Outline:</h6>
+                <div id="article-outline-result" class="p-2 bg-light border rounded"></div>
+            </div>
+
+            <button id="save-title-outline-btn" class="btn btn-success mt-2">Save Title & Outline</button>
+
+            <div id="token-usage-info" class="small text-muted mt-2"></div>
+
+            <div id="raw-response-container" class="mt-3" style="display: none;">
+                <h6>Raw API Response:</h6>
+                <pre id="raw-response" class="p-2 bg-dark text-light border rounded small"
+                    style="max-height: 200px; overflow-y: auto;"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Generate Full Article Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Generate Full Article</h5>
+    </div>
+    <div class="card-body">
+        <button id="generate-article-btn" class="btn btn-primary">Generate Article from Outline</button>
+
+        <div id="article-generation-progress" class="mt-3" style="display: none;">
+            <div class="progress mb-2">
+                <div id="generation-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                    role="progressbar" style="width: 100%"></div>
+            </div>
+            <div id="generation-status" class="small text-muted">Generating article content...</div>
+        </div>
+
+        <div id="article-generation-results" class="mt-3" style="display: none;">
+            <div class="mb-3">
+                <h6>Generated Article Content:</h6>
+                <p class="small text-muted mb-2">You can edit the content below before saving.</p>
+                <textarea id="current-article-draft" class="form-control" rows="12"></textarea>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <div id="article-token-usage-info" class="small text-muted"></div>
+                <button id="save-article-content-btn" class="btn btn-success">Save Article Content</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Refine Article Section -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Refine Article (Not working yet)</h5>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label for="refine-instructions" class="form-label">Refine Instructions</label>
+            <textarea class="form-control" id="refine-instructions" rows="4"
+                placeholder="Enter instructions for refining the article" disabled></textarea>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button id="refine-article-btn" class="btn btn-primary" disabled>Refine Article</button>
+            <button id="fix-format-btn" class="btn btn-secondary" disabled>Fix Article Format</button>
+        </div>
+
+        <div id="refine-results" class="mt-3" style="display: none;">
+            <div class="mb-3">
+                <h6>Refined Article:</h6>
+                <p class="small text-muted mb-2">Review the refined content before saving.</p>
+                <textarea id="refined-article-content" class="form-control" rows="12" disabled></textarea>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center">
+                <div id="refine-token-usage-info" class="small text-muted"></div>
+                <button id="save-refined-content-btn" class="btn btn-success" disabled>Save Refined Content</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(document).ready(function () {
+        // Store generated title and outline
+        let generatedTitle = '';
+        let generatedOutline = '';
+
+        // Generate Title & Outline
+        $('#generate-title-outline-btn').click(function () {
+            const btn = $(this);
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...');
+
+            $('#title-outline-results').hide();
+
+            $.ajax({
+                url: '{{ url_for('generate_article_title_outline') }}',
+                method: 'POST',
+                success: function (response) {
+                    btn.prop('disabled', false).text('Generate Article Title & Outline');
+
+                    console.log("Title/outline response:", response); // Debug log
+
+                    if (response.error) {
+                        alert('Error: ' + response.error);
+                        return;
+                    }
+
+                    // Store generated content
+                    generatedTitle = response.article_title || '';
+                    generatedOutline = response.article_outline || '';
+
+                    // article outline is [object Object] so we need to convert it to string
+                    if (typeof generatedOutline === 'object') {
+                        generatedOutline = JSON.stringify(generatedOutline, null, 2);
+                    }
+
+                    console.log("Title:", generatedTitle); // Debug log
+                    console.log("Outline:", generatedOutline); // Debug log
+
+                    // Display results
+                    $('#article-title-result').text(generatedTitle);
+                    $('#article-outline-result').text(generatedOutline);
+
+                    // Make sure the results container is visible
+                    $('#title-outline-results').show();
+
+                    // Check if the elements exist in the DOM
+                    console.log("Title element exists:", $('#article-title-result').length > 0);
+                    console.log("Outline element exists:", $('#article-outline-result').length > 0);
+
+                    // Display raw response if in debug mode
+                    if (response.raw_response) {
+                        $('#raw-response').text(JSON.stringify(response.raw_response, null, 2));
+                        $('#raw-response-container').show();
+                    } else {
+                        $('#raw-response-container').hide();
+                    }
+
+                    $('#title-outline-results').show();
+                },
+                error: function (xhr) {
+                    btn.prop('disabled', false).text('Generate Article Title & Outline');
+                    alert('Failed to generate title and outline: ' + xhr.responseText);
+                }
+            });
+        });
+
+        // Save Title & Outline
+        $('#save-title-outline-btn').click(function () {
+            if (!generatedTitle || !generatedOutline) {
+                alert('Please generate a title and outline first.');
+                return;
+            }
+
+            const btn = $(this);
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
+
+            // Update the article form fields if they exist
+            $('#article-title').val(generatedTitle);
+            $('#article-outline').val(generatedOutline);
+
+            // Also save to database
+            $.ajax({
+                url: '{{ url_for('save_article_title_outline') }}',
+                method: 'POST',
+                data: {
+                    article_title: generatedTitle,
+                    article_outline: generatedOutline
+                },
+                success: function (response) {
+                    btn.prop('disabled', false).text('Save Title & Outline');
+
+                    if (response.error) {
+                        alert('Error: ' + response.error);
+                        return;
+                    }
+
+                    // Show success message
+                    alert('Title and outline saved successfully!');
+
+                    // Add option to refresh the page or just show a success message
+                    $('<div class="alert alert-success mt-3" role="alert">Title and outline saved successfully! <a href="#" onclick="location.reload()">Refresh page</a> to see update in the form above.</div>')
+                        .insertAfter(btn);
+                },
+                error: function (xhr) {
+                    btn.prop('disabled', false).text('Save Title & Outline');
+                    alert('Failed to save title and outline: ' + xhr.responseText);
+                }
+            });
+        });
+
+        // Generate Full Article
+        $('#generate-article-btn').click(function () {
+            const btn = $(this);
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...');
+
+            $('#article-generation-progress').show();
+            $('#article-generation-results').hide();
+
+            // Log before making the API call
+            console.log('Making API call to generate article content...');
+
+            // Make the API call
+            $.ajax({
+                url: '{{ url_for('generate_article_content') }}',
+                method: 'POST',
+                timeout: 180000, // 3 minute timeout for longer generations
+                success: function (response) {
+                    btn.prop('disabled', false).text('Generate Article from Outline');
+                    $('#article-generation-progress').hide();
+
+                    console.log('Article generation response received:', response);
+
+                    if (response.error) {
+                        alert('Error: ' + response.error);
+                        return;
+                    }
+
+                    // Check if the article content is actually present
+                    if (!response.article_content) {
+                        console.error('No article content in response');
+                        alert('Error: The API returned an empty article. Please try again.');
+                        return;
+                    }
+
+                    // Display the generated content
+                    $('#current-article-draft').val(response.article_content);
+                    console.log('Article content set in textarea');
+
+                    // Simplified token usage display - just show that generation completed
+                    $('#article-token-usage-info').html('<strong>Article generation completed</strong>');
+
+                    // Make sure the results container is visible
+                    $('#article-generation-results').show();
+                    console.log('Article generation results displayed');
+                },
+                error: function (xhr, status, error) {
+                    btn.prop('disabled', false).text('Generate Article from Outline');
+                    $('#article-generation-progress').hide();
+                    console.error('AJAX error:', status, error);
+                    console.error('Response:', xhr.responseText);
+                    alert('Failed to generate article: ' + (xhr.responseText || 'Unknown error'));
+                }
+            });
+        });
+
+        // Manual Save Article Content
+        $('#save-article-content-btn').click(function () {
+            const btn = $(this);
+            const articleContent = $('#current-article-draft').val().trim();
+
+            if (!articleContent) {
+                alert('Please generate or enter article content before saving.');
+                return;
+            }
+
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
+
+            $.ajax({
+                url: '{{ url_for('save_article_post_content') }}',
+                method: 'POST',
+                data: {
+                    article_content: articleContent
+                },
+                success: function (response) {
+                    btn.prop('disabled', false).text('Save Article Content');
+
+                    if (response.error) {
+                        alert('Error: ' + response.error);
+                        return;
+                    }
+
+                    // Show success message
+                    $('<div class="alert alert-success mt-3" role="alert">Article content saved successfully!</div>')
+                        .insertAfter(btn.parent())
+                        .delay(3000)
+                        .fadeOut(function () { $(this).remove(); });
+                },
+                error: function (xhr) {
+                    btn.prop('disabled', false).text('Save Article Content');
+                    alert('Failed to save article content: ' + xhr.responseText);
+                }
+            });
+        });
+    });
+</script>

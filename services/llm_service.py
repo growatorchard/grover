@@ -1,7 +1,6 @@
 import os
 import json
 import requests
-import streamlit as st
 from utils.json_cleaner import clean_json_response
 from utils.token_calculator import calculate_token_costs
 
@@ -13,7 +12,8 @@ def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[
     """
     url = "https://api.openai.com/v1/chat/completions"
     try:
-        api_key = st.secrets["OPENAI_API_KEY"]
+        api_key = os.getenv("OPENAI_API_KEY")
+        print(api_key)
     except Exception:
         return "Error: No OPENAI_API_KEY found in st.secrets.", {}, ""
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
@@ -22,6 +22,8 @@ def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[
         messages.extend(conversation_history)
     messages.append({"role": "user", "content": message})
     payload = {"model": "o1-mini", "messages": messages, "max_completion_tokens": 20000}
+    # print entire prompt/message
+    print(json.dumps(payload, indent=2))
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=240)
         response.raise_for_status()
@@ -29,9 +31,11 @@ def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[
         raw_response = json.dumps(response_data, indent=2)
         if "choices" in response_data and len(response_data["choices"]) > 0:
             content = response_data["choices"][0]["message"]["content"]
-            token_usage = response_data.get("usage", {})
+            # token_usage = response_data.get("usage", {})
+            token_usage = 1
             if conversation_history is not None:
                 conversation_history.append({"role": "assistant", "content": content})
+            # return content, token_usage, raw_response
             return content, token_usage, raw_response
         return "Could not extract content from ChatGPT response.", {}, raw_response
     except requests.exceptions.RequestException as e:
@@ -45,12 +49,12 @@ def query_chatgpt_api(message: str, conversation_history: list = None) -> tuple[
     except Exception as e:
         return f"Unexpected error: {str(e)}", {}, str(e)
 
-def query_llm_api(message: str, conversation_history: list = None) -> tuple[str, dict, str]:
+def query_llm_api(llm_model, message: str, conversation_history: list = None) -> tuple[str, dict, str]:
     """
     Dispatches the API call to the selected LLM based on the sidebar model selection.
     Returns: (processed_response, token_usage, raw_response)
     """
-    model = st.session_state.get("selected_model", "ChatGPT (o1)")
+    model = llm_model
     if model == "ChatGPT (o1)":
         return query_chatgpt_api(message, conversation_history)
     else:
@@ -76,8 +80,7 @@ Return the response in JSON format:
 }}
 """
     response_text, token_usage, raw_response = query_llm_api(prompt)
-    try:
-        response_data = json.loads(clean_json_response(response_text))
-        return response_data.get("meta_title", ""), response_data.get("meta_description", "")
+    try: 
+        return response_text, token_usage, raw_response
     except Exception:
         return "", ""

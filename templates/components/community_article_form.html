@@ -1,0 +1,70 @@
+{% if not session.get('community_article_id') %}
+<!-- Create Community Article Form -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Create Community Article</h5>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info">
+            <p><strong>Note:</strong> Select a community to create a community-specific version of this article.</p>
+        </div>
+        
+        <div id="community-articles-list" class="mb-4">
+            <!-- Existing community articles will be loaded here via AJAX -->
+            <div class="text-center">
+                <div class="spinner-border spinner-border-sm" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="ms-2">Loading community articles...</span>
+            </div>
+        </div>
+        
+        <div class="mb-3">
+            <label for="community-select" class="form-label">Select Community</label>
+            <select class="form-select" id="community-select">
+                <option value="">Select a community</option>
+                <!-- Communities will be loaded via AJAX -->
+            </select>
+        </div>
+
+        <!-- Care Area Warning -->
+        <div id="care-area-warning" class="mb-3" style="display: none;"></div>
+
+        <div id="community-details" class="mb-3" style="display: none;">
+            <!-- Community details will be loaded here -->
+        </div>
+        
+        <div class="d-grid">
+            <button id="create-community-article-btn" class="btn btn-primary" disabled>Create Community Article</button>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<!-- Edit Community Article -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Community Article - {{ current_community_article.community_name }}</h5>
+    </div>
+    <div class="card-body">
+        <!-- Error message container for community article generation -->
+        <div id="community-generation-error" class="mb-3" style="display: none;"></div>
+        
+        <div class="mb-3">
+            <label for="community-article-title" class="form-label">Article Title</label>
+            <input type="text" class="form-control" id="community-article-title" name="article_title" 
+                  value="{{ current_community_article.article_title }}">
+        </div>
+        
+        <div class="mb-3">
+            <label for="community-article-content" class="form-label">Article Content</label>
+            <textarea class="form-control" id="community-article-content" name="article_content" rows="12">{{ current_community_article.article_content }}</textarea>
+        </div>
+        
+        <div class="d-flex justify-content-between">
+            <button id="generate-community-content-btn" class="btn btn-primary" data-community-id="{{ current_community_article.community_id }}">Generate Community-Specific Content</button>
+            <button id="save-community-article-btn" class="btn btn-success">Save Changes</button>
+        </div>
+    </div>
+</div>
+{% endif %}

@@ -2,8 +2,10 @@ from config.settings import INPUT_COST_PER_MILLION, OUTPUT_COST_PER_MILLION
 
 def calculate_token_costs(token_usage):
     # Extract token counts
-    prompt_tokens = token_usage.get("prompt_tokens", 0)
-    completion_tokens = token_usage.get("completion_tokens", 0)
+    # prompt_tokens = token_usage.get("prompt_tokens", 0)
+    # completion_tokens = token_usage.get("completion_tokens", 0)
+    prompt_tokens = token_usage["choices"][0]["message"]["num_tokens"]
+    completion_tokens = token_usage["choices"][0]["num_tokens"]
 
     # Calculate costs
     input_cost = (prompt_tokens / 1_000_000) * INPUT_COST_PER_MILLION
