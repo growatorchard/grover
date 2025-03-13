@@ -13,6 +13,8 @@ This is a Flask-based implementation of the Grover application, which was origin
   ├── utils/                   # Utility functions
   ├── static/                  # Static files (CSS, JS)
   ├── templates/               # HTML templates
+  ├── grover.db                # Grover Article DB
+  ├── senior_living.db         # Senior Living Community DB
   └── requirements.txt         # Dependencies
 ```
 

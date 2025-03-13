@@ -5,89 +5,13 @@ from datetime import datetime
 
 class DatabaseManager:
     def __init__(self):
-        self.conn = sqlite3.connect("grover.db", check_same_thread=False)
+        self.conn = sqlite3.connect("/data/grover.db", check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
-        self.create_tables()
+        # self.create_tables()
 
     def get_connection(self):
         return self.conn
-
-    def create_tables(self):
-        """Create all required tables if they don't exist."""
-        self.cursor.executescript(
-            """
-            PRAGMA foreign_keys = ON;
-
-            CREATE TABLE IF NOT EXISTS projects (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                care_areas JSON NOT NULL,
-                journey_stage TEXT,
-                category TEXT,
-                format_type TEXT,
-                business_category TEXT,
-                consumer_need TEXT,
-                tone_of_voice TEXT,
-                target_audiences JSON NOT NULL,
-                topic TEXT,
-                project_notes TEXT,
-                is_base_project BOOLEAN DEFAULT TRUE,
-                is_duplicate BOOLEAN DEFAULT FALSE,
-                original_project_id INTEGER,
-                changes_note TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (original_project_id) 
-                    REFERENCES projects(id)
-                    ON DELETE SET NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS keywords (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER NOT NULL,
-                keyword TEXT NOT NULL,
-                search_volume INTEGER,
-                search_intent TEXT,
-                keyword_difficulty INTEGER,
-                is_primary BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (project_id) 
-                    REFERENCES projects(id)
-                    ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS base_articles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER NOT NULL,
-                article_outline TEXT,
-                article_length INTEGER,
-                article_sections INTEGER,
-                article_title TEXT,
-                article_content TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS community_articles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER NOT NULL,
-                base_article_id INTEGER NOT NULL,
-                community_id INTEGER NOT NULL,
-                article_title TEXT,
-                article_content TEXT,
-                article_schema TEXT,
-                meta_title TEXT,
-                meta_description TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-                FOREIGN KEY (base_article_id) REFERENCES base_articles(id) ON DELETE CASCADE
-            );
-            """
-        )
-        self.conn.commit()
 
     # Projects
     def create_project(self, project_data):
@@ -226,9 +150,6 @@ class DatabaseManager:
         article_sections=None,
         article_title='',
         article_content='',
-        article_schema=None,
-        meta_title='',
-        meta_description='',
     ):
         """Create base article content with improved error handling."""
         print("Creating article content...")
@@ -239,11 +160,10 @@ class DatabaseManager:
                 cursor.execute(
                     """
                     INSERT INTO base_articles (
-                        project_id, article_outline, article_length, article_sections, article_title, article_content, article_schema,
-                        meta_title, meta_description,
+                        project_id, article_outline, article_length, article_sections, article_title, article_content,
                         created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """,
                     (
                         project_id,
@@ -251,14 +171,7 @@ class DatabaseManager:
                         article_length,
                         article_sections,
                         article_title,
-                        article_content,
-                        (
-                            json.dumps(article_schema)
-                            if isinstance(article_schema, dict)
-                            else article_schema
-                        ),
-                        meta_title,
-                        meta_description,
+                        article_content
                     ),
                 )
                 conn.commit()
@@ -275,9 +188,6 @@ class DatabaseManager:
         article_sections=None,
         article_title=None,
         article_content=None,
-        article_schema=None,
-        meta_title=None,
-        meta_description=None,
         article_id=None,
     ):
         """Save or update article content with improved error handling and transaction management."""
@@ -305,9 +215,6 @@ class DatabaseManager:
                     article_sections = article_sections if article_sections is not None else current['article_sections']
                     article_title = article_title if article_title is not None else current['article_title']
                     article_content = article_content if article_content is not None else current['article_content']
-                    article_schema = article_schema if article_schema is not None else current['article_schema']
-                    meta_title = meta_title if meta_title is not None else current['meta_title']
-                    meta_description = meta_description if meta_description is not None else current['meta_description']
                     
                     # Now update with all fields populated
                     cursor.execute(
@@ -319,9 +226,6 @@ class DatabaseManager:
                             article_sections = ?,
                             article_title = ?,
                             article_content = ?,
-                            article_schema = ?,
-                            meta_title = ?,
-                            meta_description = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ? AND project_id = ?
                         """,
@@ -331,13 +235,6 @@ class DatabaseManager:
                             article_sections,
                             article_title,
                             article_content,
-                            (
-                                json.dumps(article_schema)
-                                if isinstance(article_schema, dict)
-                                else article_schema
-                            ),
-                            meta_title,
-                            meta_description,
                             article_id,
                             project_id,
                         ),
@@ -352,11 +249,10 @@ class DatabaseManager:
                     cursor.execute(
                         """
                         INSERT INTO base_articles (
-                            project_id, article_outline, article_length, article_sections, article_title, article_content, article_schema,
-                            meta_title, meta_description,
+                            project_id, article_outline, article_length, article_sections, article_title, article_content,
                             created_at, updated_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         """,
                         (
                             project_id,
@@ -365,13 +261,6 @@ class DatabaseManager:
                             article_sections,
                             article_title,
                             article_content,
-                            (
-                                json.dumps(article_schema)
-                                if isinstance(article_schema, dict)
-                                else article_schema
-                            ),
-                            meta_title,
-                            meta_description,
                         ),
                     )
                     saved_id = cursor.lastrowid
@@ -415,7 +304,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, article_title, meta_title, meta_description, article_content 
+                SELECT id, article_title, article_content, article_outline, article_length, article_sections
                 FROM base_articles
                 WHERE project_id = ?
                 ORDER BY created_at DESC

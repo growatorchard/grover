@@ -5,13 +5,12 @@ from datetime import datetime
 from dotenv import load_dotenv
 from config.settings import TARGET_AUDIENCES, MODEL_OPTIONS, CARE_AREAS, JOURNEY_STAGES, ARTICLE_CATEGORIES, FORMAT_TYPES, BUSINESS_CATEGORIES, CONSUMER_NEEDS, TONE_OF_VOICE
 from database.database_manager import DatabaseManager
-from database.community_manager import CommunityManager
+from database.community_manager import CommunityClient
 from services.llm_service import query_llm_api
 from services.semrush_service import get_keyword_suggestions
 from services.community_service import get_care_area_details
 from services.article_service import ArticleService
 from services.project_service import ProjectService
-from utils.token_calculator import calculate_token_costs
 from utils.json_cleaner import clean_json_response
 
 load_dotenv()  # Load environment variables from .env file
@@ -38,7 +37,7 @@ def to_json_filter(value, indent=None):
 
 # Initialize database managers
 db = DatabaseManager()
-comm_manager = CommunityManager()
+comm_manager = CommunityClient()
 
 # Initialize services
 project_service = ProjectService(db)
@@ -636,111 +635,6 @@ Return ONLY the article content text.
         'raw_response': raw_response if session.get('debug_mode') else None
     })
 
-@app.route('/articles/refine', methods=['POST'])
-def refine_article():
-    article_id = session.get('article_id')
-    if not article_id:
-        return jsonify({'error': 'No article selected'}), 400
-    
-    refine_instructions = request.form.get('refine_instructions', '')
-    article_content = request.form.get('article_content', '')
-    
-    if not refine_instructions:
-        return jsonify({'error': 'No refine instructions provided'}), 400
-    
-    refine_prompt = f"""
-Refine the following article according to these instructions:
-
-INSTRUCTIONS:
-{refine_instructions}
-
-ORIGINAL ARTICLE:
-{article_content}
-
-Return the complete refined article with all improvements applied.
-"""
-    refined_text, token_usage, raw_response = query_llm_api(refine_prompt)
-    
-    # Track token usage
-    token_usage_history = session.get('token_usage_history', [])
-    token_usage_history.append({
-        "iteration": 1,
-        "timestamp": datetime.now().strftime("%H:%M:%S"),
-        "usage": token_usage,
-    })
-    session['token_usage_history'] = token_usage_history
-    # costs = calculate_token_costs(token_usage)
-    costs = 1
-
-    # Update drafts in session
-    drafts = session.get('drafts_by_article', {})
-    drafts[str(article_id)] = refined_text
-    session['drafts_by_article'] = drafts
-    
-    return jsonify({
-        'refined_text': refined_text,
-        'token_usage': token_usage,
-        'costs': costs,
-        'raw_response': raw_response if session.get('debug_mode') else None
-    })
-
-@app.route('/articles/fix_format', methods=['POST'])
-def fix_article_format():
-    article_id = session.get('article_id')
-    if not article_id:
-        return jsonify({'error': 'No article selected'}), 400
-    
-    article_content = request.form.get('article_content', '')
-    
-    fix_prompt = """
-Fix any markdown formatting issues in the following article. Ensure:
-1. Headers use ## and ### format properly
-2. Lists are properly formatted
-3. No excessive line breaks
-4. Consistent spacing and indentation
-5. Preserve all content and links
-
-Article:
-""" + article_content
-    
-    fixed_text, token_usage, raw_response = query_llm_api(fix_prompt)
-    
-    # Track token usage
-    token_usage_history = session.get('token_usage_history', [])
-    token_usage_history.append({
-        "iteration": 1,
-        "timestamp": datetime.now().strftime("%H:%M:%S"),
-        "usage": token_usage,
-    })
-    session['token_usage_history'] = token_usage_history
-    
-    # Update drafts in session
-    drafts = session.get('drafts_by_article', {})
-    drafts[str(article_id)] = fixed_text
-    session['drafts_by_article'] = drafts
-    
-    # Save to database
-    try:
-        article_row = db.get_article_content(article_id)
-        if article_row:
-            db.save_article_content(
-                project_id=session.get('project_id'),
-                article_title=article_row.get('article_title', ''),
-                article_content=fixed_text,
-                article_schema=None,
-                meta_title=article_row.get('meta_title', ''),
-                meta_description=article_row.get('meta_description', ''),
-                article_id=article_id
-            )
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    
-    return jsonify({
-        'fixed_text': fixed_text,
-        'token_usage': token_usage,
-        'raw_response': raw_response if session.get('debug_mode') else None
-    })
-
 # Community Articles
 @app.route('/articles/community_revision', methods=['POST'])
 def generate_community_revision():
@@ -901,16 +795,33 @@ def list_communities():
     project_id = session.get('project_id')
     communities = comm_manager.get_communities()
     communities = [dict(c) for c in communities] if communities else []
+    print('communities ', communities)
 
     project_care_areas = []
     if project_id:
         project = db.get_project(project_id)
         if project:
-            project_care_areas = json.loads(project['care_areas'])
+            # Check if 'care_areas' exists in the project row object
+            try:
+                care_areas = project['care_areas']
+                if care_areas:
+                    try:
+                        project_care_areas = json.loads(care_areas)
+                    except (json.JSONDecodeError, TypeError):
+                        # Handle case where care_areas is invalid JSON
+                        project_care_areas = []
+            except (IndexError, KeyError):
+                # Handle case where 'care_areas' key doesn't exist
+                project_care_areas = []
+    
+    # If no care areas are selected in the project, return all communities
+    if not project_care_areas:
+        return jsonify(communities)
     
     communities_missing_care_areas = []
     for community in communities:
         community_care_areas = comm_manager.get_care_areas(community['id'])
+        print('community_care_areas ', community_care_areas)
         community_care_area_names = [dict(area).get('care_area', '') for area in community_care_areas]
         for project_area in project_care_areas:
             if project_area not in community_care_area_names:
@@ -1086,4 +997,4 @@ def save_community_article_content():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host="0.0.0.0", port=5000)

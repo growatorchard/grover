@@ -5,39 +5,24 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements first to leverage Docker cache
+# Install dependencies
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
+# Copy the rest of the source code
 COPY . .
 
-# Create .streamlit directory
-RUN mkdir -p .streamlit
+# Create a directory for logs
+RUN mkdir -p /app/logs
 
-# Create a template secrets.toml (will be overwritten by mounted volume)
-RUN echo "# Template secrets file - will be overwritten by mounted volume\n\
-OPENAI_API_KEY = ''\n\
-SEMRUSH_API_KEY = ''" > .streamlit/secrets.toml
+# Create a directory for databases
+RUN mkdir -p /data /senior_data
 
-# Expose Streamlit port
-EXPOSE 8501
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
 
-# Set healthcheck
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
-
-# Run Streamlit
-CMD ["streamlit", "run", "app.py", "--server.address", "0.0.0.0"] 
+CMD ["python", "app.py"]
