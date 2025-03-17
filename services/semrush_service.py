@@ -50,19 +50,7 @@ def parse_semrush_response(response_text, debug_mode=False):
     
     return result
 
-def get_keyword_suggestions(keyword, database="us", debug_mode=False):
-    """Get keyword suggestions from SEMrush."""
-    result = query_semrush_api(keyword, database, debug_mode)
-    if result.get("error"):
-        return result
-    
-    return {
-        "main_keyword": result.get("overview"),
-        "related_keywords": result.get("related_keywords", []),
-        "error": result.get("error"),
-    }
-
-def query_semrush_api(keyword, database="us", debug_mode=False):
+def query_semrush_api(keyword, database="us", lookup_type="phrase_related", debug_mode=False):
     """Query SEMrush API using the new related keyword research route."""
     api_key = os.getenv("SEMRUSH_API_KEY", "")
     if not api_key:
@@ -70,112 +58,60 @@ def query_semrush_api(keyword, database="us", debug_mode=False):
     try:
         # Build the new URL using the correct export columns
         new_url = (
-            f"https://api.semrush.com/?type=phrase_related"
+            f"https://api.semrush.com/?type={lookup_type}"
             f"&key={api_key}"
             f"&phrase={keyword}"
             f"&export_columns=Ph,Nq,Kd,In"
             f"&database={database}"
-            f"&display_limit=25"
+            f"&display_limit=30"
             f"&display_sort=kd_desc"
             f"&display_filter=%2B|Nq|Gt|99|%2B|Nq|Lt|1501|%2B|Kd|Lt|41|%2B|Kd|Gt|9"
         )
         response = requests.get(new_url)
-        if debug_mode:
-            st.write("Raw SEMrush API response:")
-            st.write(response.text)
         if response.status_code != 200:
             raise ValueError(f"Request error (HTTP {response.status_code}): {response.text}")
 
         data = parse_semrush_response(response.text, debug_mode=debug_mode)
+
         if not data:
-            return {"overview": None, "related_keywords": [], "error": "No data returned"}
+            return {"overview": None, "lookup_results": [], "error": "No data returned"}
 
-        # Use the first result as the main overview
-        main_keyword = data[0] if data else {}
-        overview_obj = {
-            "Ph": main_keyword.get("Ph", keyword),
-            "Nq": main_keyword.get("Nq", "0"),
-            "Kd": main_keyword.get("Kd", "0"),
-            "In": main_keyword.get("In", ""),
-        }
-
-        # Process the full list as related keywords
-        related_list = []
+        results_list = []
         for item in data:
             item = {k: v.strip() for k, v in item.items()}
-            related_list.append({
+            results_list.append({
                 "Ph": item.get("Ph", ""),
                 "Nq": item.get("Nq", "0"),
                 "Kd": item.get("Kd", "0"),
                 "In": item.get("In", ""),
             })
-            print(related_list)
 
-        return {"overview": overview_obj, "related_keywords": related_list, "error": None}
+        seed_phrase_url = (
+            f"https://api.semrush.com/?type=phrase_all"
+            f"&key={api_key}"
+            f"&phrase={keyword}"
+            f"&export_columns=Ph,Nq,Kd,In"
+            f"&database={database}"
+        )
+
+        seed_phrase_response = requests.get(seed_phrase_url)
+        if seed_phrase_response.status_code != 200:
+            raise ValueError(f"Request error (HTTP {seed_phrase_response.status_code}): {seed_phrase_response.text}")
+
+        seed_phrase_data = parse_semrush_response(seed_phrase_response.text, debug_mode=debug_mode)
+
+        return {"lookup_results": results_list, "seed_phrase_results": seed_phrase_data, "error": None}
     except Exception as e:
-        if debug_mode:
-            st.error(f"SEMrush API error: {str(e)}")
-        return {"overview": None, "related_keywords": [], "error": str(e)}
-
-# In services/semrush_service.py, format_keyword_report function
-def format_keyword_report(keyword_data):
-    """Format keyword data into a readable report."""
-    if not keyword_data or keyword_data.get("error"):
-        return "No keyword data available"
+        return {"overview": None, "lookup_results": [], "seed_phrase_results": [], "error": str(e)}
     
-    # Intent mapping for human-readable display
-    intent_map = {
-        "0": "Commercial (specific page, site, or physical location)",
-        "1": "Informational (investigate brands or services)",
-        "2": "Navigational (complete an action)",
-        "3": "Transactional (find an answer to a specific question)",
+def get_keyword_suggestions(keyword, database="us", lookup_type="phrase_related", debug_mode=False):
+    """Get keyword suggestions from SEMrush."""
+    result = query_semrush_api(keyword, database, lookup_type, debug_mode)
+    if result.get("error"):
+        return result
+    
+    return {
+        "lookup_results": result.get("lookup_results", []),
+        "seed_phrase_results": result.get("seed_phrase_results", []),
+        "error": result.get("error"),
     }
-    
-    short_intent_map = {
-        "0": "Commercial",
-        "1": "Informational",
-        "2": "Navigational",
-        "3": "Transactional",
-    }
-    
-    lines = ["Keyword Research Report:\n"]
-    main = keyword_data.get("main_keyword")
-    if main:
-        lines.append(f"**Main Keyword**: {main.get('Ph', 'N/A')}")
-        lines.append(f"- Volume: {main.get('Nq', 'N/A')}")
-        lines.append(f"- Difficulty: {main.get('Kd', 'N/A')}")
-        
-        # Handle potentially multiple intents for main keyword
-        intent_value = main.get("In", "N/A")
-        if intent_value and "," in intent_value:
-            intent_values = intent_value.split(",")
-            intent_descriptions = []
-            for val in intent_values:
-                val = val.strip()
-                intent_descriptions.append(intent_map.get(val, "Unknown"))
-            intent_desc = ", ".join(intent_descriptions)
-        else:
-            intent_desc = intent_map.get(intent_value, "N/A")
-            
-        lines.append(f"- Intent: {intent_desc}")
-        lines.append("")
-    
-    related = keyword_data.get("related_keywords", [])
-    if related:
-        lines.append("**Related Keywords**:")
-        for rk in related:
-            # Handle potentially multiple intents for related keywords
-            intent_value = rk.get("In", "N/A")
-            if intent_value and "," in intent_value:
-                intent_values = intent_value.split(",")
-                intent_descriptions = []
-                for val in intent_values:
-                    val = val.strip()
-                    intent_descriptions.append(short_intent_map.get(val, "Unknown"))
-                intent_desc = ", ".join(intent_descriptions)
-            else:
-                intent_desc = short_intent_map.get(intent_value, "N/A")
-                
-            lines.append(f" - {rk.get('Ph', 'N/A')} (Vol={rk.get('Nq', 'N/A')}, Diff={rk.get('Kd', 'N/A')}, Intent={intent_desc})")
-    
-    return "\n".join(lines)

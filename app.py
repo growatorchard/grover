@@ -244,8 +244,12 @@ def research_keywords():
     if not keyword:
         return jsonify({'error': 'No keyword provided'}), 400
     
+    lookup_type = request.form.get('lookup_type')
+    if not lookup_type:
+        return jsonify({'error': 'No lookup type provided'}), 400
+    
     debug_mode = session.get('debug_mode', False)
-    data = get_keyword_suggestions(keyword.strip(), debug_mode=debug_mode)
+    data = get_keyword_suggestions(keyword.strip(), debug_mode=debug_mode, lookup_type=lookup_type)
     return jsonify(data)
 
 # Article Routes
@@ -431,7 +435,6 @@ ARTICLE SPECIFICATIONS:
 
 ### ✅ **Formatting Preferences**
 - Maintain **clear headings and subheadings** for readability.
-- Ensure **CTA (Call to Action)** is placed at the end, encouraging readers to learn more or schedule a visit.
 """
 
     full_article_prompt = f"""
@@ -600,7 +603,6 @@ ARTICLE SPECIFICATIONS:
 ### ✅ **Formatting Preferences**
 - Maintain **clear headings and subheadings** for readability.
 - Include **bullet points** where appropriate for clarity and engagement.
-- Ensure **CTA (Call to Action)** is placed at the end, encouraging readers to learn more or schedule a visit.
 
 ARTICLE TITLE: {article_title}
 
@@ -767,7 +769,6 @@ ARTICLE SPECIFICATIONS:
 ### ✅ **Formatting Preferences**
 - Maintain **clear headings and subheadings** for readability, but they may be customized to better match the community's branding and services.
 - Include **bullet points** where appropriate for clarity and engagement.
-- Ensure **CTA (Call to Action)** is placed at the end, encouraging readers to learn more or schedule a visit.
 
 ## **Community Details to Incorporate**
 {community_details_text}
