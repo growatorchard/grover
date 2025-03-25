@@ -109,13 +109,8 @@
         $('#add-keywords-form').submit(function (e) {
             e.preventDefault();
 
-            const primaryKeyword = $('#primary-keyword').val().trim();
+            
             const additionalKeywords = $('#additional-keywords').val().trim();
-
-            // Save primary keyword if provided
-            if (primaryKeyword) {
-                saveKeyword(primaryKeyword);
-            }
 
             // Save additional keywords if provided
             if (additionalKeywords) {
