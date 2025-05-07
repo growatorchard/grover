@@ -103,12 +103,12 @@
     <!-- 7. Community Articles -->
     <div class="accordion-item">
         <h2 class="accordion-header">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#communityArticleSection" aria-expanded="false" aria-controls="communityArticleSection">
+            <button class="accordion-button {% if active_section == 'community' %}{% else %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#communityArticleSection" aria-expanded="{% if active_section == 'community' %}true{% else %}false{% endif %}" aria-controls="communityArticleSection">
                 <i class="bi bi-people me-2"></i>
                 7) Community Articles
             </button>
         </h2>
-        <div id="communityArticleSection" class="accordion-collapse collapse">
+        <div id="communityArticleSection" class="accordion-collapse collapse {% if active_section == 'community' %}show{% endif %}">
             <div class="accordion-body">
                 {% include 'components/community_article_form.html' %}
             </div>

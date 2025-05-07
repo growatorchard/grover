@@ -564,8 +564,10 @@ $(document).ready(function () {
                         return;
                     }
 
-                    // Redirect to refresh the page with the new community article selected
-                    window.location.href = '/';
+                    // Keep the community articles section open and refresh the page
+                    const currentUrl = window.location.href;
+                    const targetUrl = currentUrl + (currentUrl.includes('?') ? '&' : '?') + 'section=community';
+                    window.location.href = targetUrl;
                 },
                 error: function (xhr) {
                     alert('Failed to create community article: ' + xhr.responseText);
@@ -605,8 +607,14 @@ $(document).ready(function () {
                 method: 'POST',
                 data: { community_article_id: articleId },
                 success: function () {
-                    // Reload the page
-                    window.location.reload();
+                    // Reload the page with community section open
+                    const currentUrl = window.location.href;
+                    if (currentUrl.includes('section=community')) {
+                        window.location.reload();
+                    } else {
+                        const targetUrl = currentUrl + (currentUrl.includes('?') ? '&' : '?') + 'section=community';
+                        window.location.href = targetUrl;
+                    }
                 },
                 error: function (xhr) {
                     alert('Failed to select community article: ' + xhr.responseText);

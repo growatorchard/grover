@@ -78,6 +78,7 @@ def index():
     current_article = None
     community_articles = []
     current_community_article = None
+    active_section = request.args.get('section', None)
     
     if session.get('project_id'):
         selected_project = db.get_project(session['project_id'])
@@ -128,7 +129,8 @@ def index():
                           format_types=FORMAT_TYPES,
                           business_categories=BUSINESS_CATEGORIES,
                           consumer_needs=CONSUMER_NEEDS,
-                          tone_of_voice=TONE_OF_VOICE)
+                          tone_of_voice=TONE_OF_VOICE,
+                          active_section=active_section)
 
 @app.route('/set_model', methods=['POST'])
 def set_model():
@@ -869,7 +871,7 @@ def select_community_article():
     if community_article_id == 'new':
         # Clear community article selection to show the creation form
         session['community_article_id'] = None
-        return redirect(url_for('index'))
+        return redirect(url_for('index', section='community'))
     else:
         # Select existing community article
         try:
@@ -878,7 +880,7 @@ def select_community_article():
         except (ValueError, TypeError):
             session['community_article_id'] = None
     
-    return redirect(url_for('index'))
+    return redirect(url_for('index', section='community'))
 
 @app.route('/community_articles/list')
 def list_community_articles():
@@ -950,7 +952,7 @@ def delete_community_article():
             db.delete_community_article(community_article_id)
             session['community_article_id'] = None
             # return jsonify({'success': True})
-            return redirect(url_for('index'))
+            return redirect(url_for('index', section='community'))
         except Exception as e:
             app.logger.error(f"Error deleting community article: {str(e)}")
             return jsonify({'error': str(e)}), 500
