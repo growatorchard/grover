@@ -289,12 +289,82 @@
                         .insertAfter(btn.parent())
                         .delay(3000)
                         .fadeOut(function () { $(this).remove(); });
+
+                    // Automatically update both preview and final article sections - use window-scoped functions
+                    if (typeof window.loadViewArticle === 'function') {
+                        window.loadViewArticle();
+                    } else if (typeof loadViewArticle === 'function') {
+                        loadViewArticle();
+                    }
+                    
+                    if (typeof window.loadFinalArticle === 'function') {
+                        window.loadFinalArticle();
+                    } else if (typeof loadFinalArticle === 'function') {
+                        loadFinalArticle();
+                    }
                 },
                 error: function (xhr) {
                     btn.prop('disabled', false).text('Save Article Content');
                     alert('Failed to save article content: ' + xhr.responseText);
                 }
             });
+        });
+
+        // Initialize article handlers
+        function initializeArticleHandlers() {
+            // Save final article
+            $(document).off('click', '#save-final-article-btn').on('click', '#save-final-article-btn', function () {
+                const btn = $(this);
+                const articleContent = $('#final-article-content').val().trim();
+
+                btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
+
+                $.ajax({
+                    url: '{{ url_for('save_article_post_content') }}',
+                    method: 'POST',
+                    data: {
+                        article_content: articleContent
+                    },
+                    success: function (response) {
+                        btn.prop('disabled', false).text('Save Changes');
+
+                        if (response.error) {
+                            alert('Error: ' + response.error);
+                            return;
+                        }
+
+                        // Show success message
+                        $('<div class="alert alert-success alert-dismissible fade show" role="alert">')
+                            .text('Article saved successfully.')
+                            .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>')
+                            .prependTo('#final-article-container');
+                        
+                        // Update the preview if it exists - use global function
+                        if (typeof window.loadViewArticle === 'function') {
+                            window.loadViewArticle();
+                        } else if (typeof loadViewArticle === 'function') {
+                            loadViewArticle();
+                        }
+                    },
+                    error: function (xhr) {
+                        btn.prop('disabled', false).text('Save Changes');
+                        alert('Failed to save article: ' + xhr.responseText);
+                    }
+                });
+            });
+        }
+
+        // Load articles on page load
+        $(document).ready(function() {
+            // Load final article if container exists
+            if ($('#final-article-container').length > 0) {
+                loadFinalArticle();
+            }
+            
+            // Load preview article if container exists
+            if ($('#preview-article-container').length > 0) {
+                loadViewArticle();
+            }
         });
     });
 </script>

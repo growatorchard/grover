@@ -172,7 +172,7 @@ $(document).ready(function() {
             <div class="mb-3">
                 <h5>Article Content</h5>
                 <div class="border p-3 bg-light markdown-content">
-                    ${renderMarkdown(article.article_content || 'No content available')}
+                    ${window.renderMarkdown(article.article_content || 'No content available')}
                 </div>
             </div>
             
@@ -214,21 +214,6 @@ $(document).ready(function() {
         });
     });
     {% endif %}
-    
-    // Simple function to render markdown (in a real app, you'd use a proper markdown library)
-    function renderMarkdown(text) {
-        // This is a very basic implementation - use a library like marked.js for production
-        let html = text
-            .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-            .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-            .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>')
-            .replace(/\n/g, '<br>');
-        
-        return html;
-    }
 });
 </script>
 {% endblock %}

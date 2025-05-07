@@ -1,5 +1,11 @@
 // Main JavaScript file for the Grover app
 
+// Define these functions in the global scope
+window.loadFinalArticle = null;
+window.loadViewArticle = null;
+window.initializeArticleHandlers = null;
+window.renderMarkdown = null;
+
 $(document).ready(function () {
     // Toggle debug mode
     $('#debug-mode-toggle').change(function () {
@@ -94,7 +100,7 @@ $(document).ready(function () {
     });
 
     // Load final article for viewing
-    function loadFinalArticle() {
+    window.loadFinalArticle = function() {
         $.ajax({
             url: '/articles/get_current',
             method: 'GET',
@@ -105,7 +111,6 @@ $(document).ready(function () {
                 }
 
                 let html = `
-                
                 <div class="mb-3">
                     <label for="final-article-content" class="form-label">Article Content</label>
                     <textarea class="form-control" id="final-article-content" name="article_content" rows="15">${article.article_content || ''}</textarea>
@@ -116,54 +121,64 @@ $(document).ready(function () {
                 </div>`;
 
                 $('#final-article-container').html(html);
+                
+                // Initialize any necessary event handlers or plugins
+                window.initializeArticleHandlers();
             },
             error: function () {
                 $('#final-article-container').html('<div class="alert alert-danger">Failed to load article data.</div>');
             }
         });
-    }
+    };
+    loadFinalArticle = window.loadFinalArticle;
 
-    // Load final article if on the main page and article_id is set
-    if ($('#final-article-container').length > 0) {
-        loadFinalArticle();
-    }
+    // Initialize article-related event handlers
+    window.initializeArticleHandlers = function() {
+        // Save final article
+        $(document).off('click', '#save-final-article-btn').on('click', '#save-final-article-btn', function () {
+            const btn = $(this);
+            const articleContent = $('#final-article-content').val().trim();
 
-    // Save final article
-    $(document).on('click', '#save-final-article-btn', function () {
-        const btn = $(this);
-        const articleContent = $('#final-article-content').val().trim();
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
 
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
+            $.ajax({
+                url: '/articles/save_article_post_content',
+                method: 'POST',
+                data: {
+                    article_content: articleContent,
+                },
+                success: function (response) {
+                    btn.prop('disabled', false).text('Save Changes');
 
-        $.ajax({
-            url: '/articles/save_article_post_content',
-            method: 'POST',
-            data: {
-                article_content: articleContent,
-            },
-            success: function (response) {
-                btn.prop('disabled', false).text('Save Changes');
+                    if (response.error) {
+                        alert('Error: ' + response.error);
+                        return;
+                    }
 
-                if (response.error) {
-                    alert('Error: ' + response.error);
-                    return;
+                    // Show success message
+                    $('<div class="alert alert-success alert-dismissible fade show" role="alert">')
+                        .text('Article saved successfully.')
+                        .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>')
+                        .prependTo('#final-article-container');
+                    
+                    // Reload the article content to ensure it's up to date
+                    loadFinalArticle();
+                    
+                    // Also update the preview if it exists
+                    if ($('#preview-article-container').length > 0) {
+                        loadViewArticle();
+                    }
+                },
+                error: function (xhr) {
+                    btn.prop('disabled', false).text('Save Changes');
+                    alert('Failed to save article: ' + xhr.responseText);
                 }
-
-                // Show success message
-                $('<div class="alert alert-success alert-dismissible fade show" role="alert">')
-                    .text('Article saved successfully.')
-                    .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>')
-                    .prependTo('#final-article-container');
-            },
-            error: function (xhr) {
-                btn.prop('disabled', false).text('Save Changes');
-                alert('Failed to save article: ' + xhr.responseText);
-            }
+            });
         });
-    });
+    };
 
     // View article content
-    function loadViewArticle() {
+    window.loadViewArticle = function() {
         $.ajax({
             url: '/articles/get_current',
             method: 'GET',
@@ -182,7 +197,7 @@ $(document).ready(function () {
                 <div class="mb-3">
                     <h5>Article Content</h5>
                     <div class="border p-3 bg-light markdown-content">
-                        ${renderMarkdown(article.article_content || 'No content available')}
+                        ${window.renderMarkdown(article.article_content || 'No content available')}
                     </div>
                 </div>
                 
@@ -191,57 +206,91 @@ $(document).ready(function () {
                 </div>`;
 
                 $('#preview-article-container').html(html);
+                
+                // Initialize copy button handler
+                initializeCopyButton();
             },
             error: function () {
                 $('#preview-article-container').html('<div class="alert alert-danger">Failed to load article data.</div>');
             }
         });
-    }
+    };
+    loadViewArticle = window.loadViewArticle;
 
-    // Simple function to render markdown (in a real app, you'd use a proper markdown library)
-    function renderMarkdown(text) {
-        // This is a very basic implementation - use a library like marked.js for production
-        let html = text
-            .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-            .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-            .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/\n/g, '<br>');
+    // Enhanced markdown rendering function
+    window.renderMarkdown = function(text) {
+        if (!text) return '';
+        
+        // Convert markdown to HTML using marked.js with security options
+        return DOMPurify.sanitize(marked.parse(text, {
+            breaks: true,
+            gfm: true,
+            headerIds: true,
+            mangle: false
+        }));
+    };
+    renderMarkdown = window.renderMarkdown;
 
-        return html;
-    }
+    // Initialize copy button handler
+    function initializeCopyButton() {
+        $(document).off('click', '#copy-markdown-btn').on('click', '#copy-markdown-btn', function () {
+            $.ajax({
+                url: '/articles/get_current',
+                method: 'GET',
+                success: function (article) {
+                    if (!article || !article.article_content) {
+                        alert('No article content available to copy.');
+                        return;
+                    }
 
-    // Load view article if on the main page
-    if ($('#preview-article-container').length > 0) {
-        loadViewArticle();
-    }
+                    // Create a temporary textarea element to copy the text
+                    const textarea = document.createElement('textarea');
+                    textarea.value = article.article_content;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
 
-    // Copy raw markdown
-    $(document).on('click', '#copy-markdown-btn', function () {
-        $.ajax({
-            url: '/articles/get_current',
-            method: 'GET',
-            success: function (article) {
-                if (!article || !article.article_content) {
-                    alert('No article content available to copy.');
-                    return;
+                    // Show feedback
+                    const btn = $('#copy-markdown-btn');
+                    const originalText = btn.text();
+                    btn.text('Copied!');
+                    setTimeout(() => {
+                        btn.text(originalText);
+                    }, 2000);
+                },
+                error: function () {
+                    alert('Failed to copy article content.');
                 }
-
-                // Create a temporary textarea element to copy the text
-                const textarea = document.createElement('textarea');
-                textarea.value = article.article_content;
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-
-                alert('Article content copied to clipboard!');
-            },
-            error: function () {
-                alert('Failed to copy article content.');
-            }
+            });
         });
+    }
+
+    // Load articles on page load
+    $(document).ready(function() {
+        console.log("Document ready - loading article sections");
+        // Load final article if container exists
+        if ($('#final-article-container').length > 0) {
+            console.log("Loading final article");
+            window.loadFinalArticle();
+        }
+        
+        // Load preview article if container exists
+        if ($('#preview-article-container').length > 0) {
+            console.log("Loading preview article");
+            window.loadViewArticle();
+        }
+    });
+    
+    // Ensure articles are loaded when tabs are shown
+    $(document).on('shown.bs.collapse', '#finalArticleSection', function () {
+        console.log("Final article section opened - loading content");
+        window.loadFinalArticle();
+    });
+    
+    $(document).on('shown.bs.collapse', '#viewArticleSection', function () {
+        console.log("Preview article section opened - loading content");
+        window.loadViewArticle();
     });
 
     // Community article related functions
@@ -594,6 +643,53 @@ $(document).ready(function () {
         autoSaveTimeout = setTimeout(function () {
             $('#save-final-article-btn').click();
         }, 3000); // Auto-save after 3 seconds of inactivity
+    });
+
+    // --- Dynamic Primary Content Category Dropdown ---
+    const journeyToCategories = {
+        'Awareness & Research': [
+            'Affordability & Pricing',
+            'Planning Ahead',
+            'Caregiver Education'
+        ],
+        'Consideration': [
+            'Affordability & Pricing',
+            'Healthcare',
+            'Senior Living Features & Services',
+            'Dining & Nutrition',
+            'Safety & Security',
+            'Lifestyle'
+        ],
+        'Evaluation & Residency': [
+            'Affordability & Pricing',
+            'Lifestyle',
+            'Innovation',
+            'Resident & Family Experiences'
+        ]
+    };
+
+    function updateCategoryOptions(selectedStage, selectedCategory) {
+        const $category = $('#category');
+        $category.empty();
+        if (selectedStage && journeyToCategories[selectedStage]) {
+            journeyToCategories[selectedStage].forEach(cat => {
+                const isSelected = selectedCategory && selectedCategory === cat ? 'selected' : '';
+                $category.append(`<option value="${cat}" ${isSelected}>${cat}</option>`);
+            });
+        }
+    }
+
+    $(document).ready(function() {
+        // On page load, set the category options based on the current journey stage
+        const $journeyStage = $('#journey-stage');
+        const $category = $('#category');
+        let initialStage = $journeyStage.val();
+        let initialCategory = $category.data('selected'); // for update form, if needed
+        updateCategoryOptions(initialStage, initialCategory);
+
+        $journeyStage.on('change', function() {
+            updateCategoryOptions($(this).val(), null);
+        });
     });
 });
 

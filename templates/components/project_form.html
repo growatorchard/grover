@@ -10,20 +10,18 @@
         <div class="col-md-6 mb-3">
             <label for="journey-stage" class="form-label">Consumer Journey Stage</label>
             <select class="form-select" id="journey-stage" name="journey_stage" required>
-                {% for stage in journey_stages %}
-                <option value="{{ stage }}">{{ stage }}</option>
-                {% endfor %}
+                <option value="Awareness & Research">Awareness & Research</option>
+                <option value="Consideration">Consideration</option>
+                <option value="Evaluation & Residency">Evaluation & Residency</option>
             </select>
         </div>
     </div>
     
     <div class="row">
         <div class="col-md-6 mb-3">
-            <label for="category" class="form-label">Article Category</label>
+            <label for="category" class="form-label">Primary Content Category</label>
             <select class="form-select" id="category" name="category" required>
-                {% for category in article_categories %}
-                <option value="{{ category }}">{{ category }}</option>
-                {% endfor %}
+                <!-- Options will be populated by JS based on journey stage -->
             </select>
         </div>
         
@@ -112,20 +110,18 @@
         <div class="col-md-6 mb-3">
             <label for="journey-stage" class="form-label">Consumer Journey Stage</label>
             <select class="form-select" id="journey-stage" name="journey_stage" required>
-                {% for stage in journey_stages %}
-                <option value="{{ stage }}" {% if selected_project.journey_stage == stage %}selected{% endif %}>{{ stage }}</option>
-                {% endfor %}
+                <option value="Awareness & Research" {% if selected_project.journey_stage == 'Awareness & Research' %}selected{% endif %}>Awareness & Research</option>
+                <option value="Consideration" {% if selected_project.journey_stage == 'Consideration' %}selected{% endif %}>Consideration</option>
+                <option value="Evaluation & Residency" {% if selected_project.journey_stage == 'Evaluation & Residency' %}selected{% endif %}>Evaluation & Residency</option>
             </select>
         </div>
     </div>
     
     <div class="row">
         <div class="col-md-6 mb-3">
-            <label for="category" class="form-label">Article Category</label>
+            <label for="category" class="form-label">Primary Content Category</label>
             <select class="form-select" id="category" name="category" required>
-                {% for category in article_categories %}
-                <option value="{{ category }}" {% if selected_project.category == category %}selected{% endif %}>{{ category }}</option>
-                {% endfor %}
+                <!-- Options will be populated by JS based on journey stage -->
             </select>
         </div>
         
