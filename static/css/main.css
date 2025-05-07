@@ -26,7 +26,7 @@ body {
 }
 
 .app-logo {
-    height: 50px;
+    height: 80px;
     margin-right: 20px;
 }
 
@@ -52,6 +52,25 @@ body {
 }
 
 /* Accordion styles */
+.custom-accordion {
+    --bs-accordion-border-radius: 8px;
+    --bs-accordion-inner-border-radius: 8px;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.custom-accordion .accordion-item {
+    border: none;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: var(--card-shadow);
+}
+
+.custom-accordion .accordion-header {
+    border-radius: 8px;
+}
+
 .accordion-button:not(.collapsed) {
     background-color: var(--light-blue);
     color: var(--primary-blue);
@@ -64,6 +83,20 @@ body {
 }
 
 .accordion-button.collapsed {
+    background-color: white;
+}
+
+.accordion-button i {
+    font-size: 1.2rem;
+    color: var(--primary-blue);
+}
+
+.accordion-button:not(.collapsed) i {
+    color: var(--primary-blue);
+}
+
+.accordion-body {
+    padding: 1.5rem;
     background-color: white;
 }
 
@@ -165,21 +198,21 @@ body {
     margin-bottom: 1rem;
     border-bottom: 1px solid var(--gray-border);
     padding-bottom: 0.5rem;
-    color: var(--primary-blue);
+    color: var(--dark-text);
 }
 
 .markdown-content h2 {
     font-size: 1.5rem;
     margin-top: 1.5rem;
     margin-bottom: 0.75rem;
-    color: var(--primary-blue);
+    color: var(--dark-text);
 }
 
 .markdown-content h3 {
     font-size: 1.25rem;
     margin-top: 1.25rem;
     margin-bottom: 0.5rem;
-    color: var(--primary-blue);
+    color: var(--dark-text);
 }
 
 .markdown-content p {

@@ -1,11 +1,12 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="accordion" id="mainAccordion">
+<div class="accordion custom-accordion" id="mainAccordion">
     <!-- 1. Create/Update Project -->
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button {% if not session.get('project_id') %}{% else %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#projectSection" aria-expanded="{% if not session.get('project_id') %}true{% else %}false{% endif %}" aria-controls="projectSection">
+                <i class="bi bi-folder-plus me-2"></i>
                 {% if not session.get('project_id') %}1) Create Project{% else %}1) Update Project{% endif %}
             </button>
         </h2>
@@ -23,6 +24,7 @@
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#keywordSection" aria-expanded="false" aria-controls="keywordSection">
+                <i class="bi bi-key me-2"></i>
                 2) Manage Keywords (SEMrush)
             </button>
         </h2>
@@ -37,6 +39,7 @@
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#articleSettingsSection" aria-expanded="false" aria-controls="articleSettingsSection">
+                <i class="bi bi-gear me-2"></i>
                 3) {% if not session.get('article_id') %}Create{% else %}Update{% endif %} Article Settings
             </button>
         </h2>
@@ -52,6 +55,7 @@
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#articleGenerateSection" aria-expanded="false" aria-controls="articleGenerateSection">
+                <i class="bi bi-magic me-2"></i>
                 4) Generate & Refine Article (LLM)
             </button>
         </h2>
@@ -66,6 +70,7 @@
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#finalArticleSection" aria-expanded="false" aria-controls="finalArticleSection">
+                <i class="bi bi-pencil-square me-2"></i>
                 5) Final Article (editable)
             </button>
         </h2>
@@ -82,6 +87,7 @@
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#viewArticleSection" aria-expanded="false" aria-controls="viewArticleSection">
+                <i class="bi bi-eye me-2"></i>
                 6) Preview Saved Article
             </button>
         </h2>
@@ -98,6 +104,7 @@
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#communityArticleSection" aria-expanded="false" aria-controls="communityArticleSection">
+                <i class="bi bi-people me-2"></i>
                 7) Community Articles
             </button>
         </h2>
@@ -113,6 +120,7 @@
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#previewCommunityArticleSection" aria-expanded="false" aria-controls="previewCommunityArticleSection">
+                <i class="bi bi-eye-fill me-2"></i>
                 8) Preview Community Article
             </button>
         </h2>
@@ -133,6 +141,7 @@
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#debugSection" aria-expanded="false" aria-controls="debugSection">
+                <i class="bi bi-bug me-2"></i>
                 Debug Info
             </button>
         </h2>
@@ -147,72 +156,11 @@
 
 <script>
 $(document).ready(function() {
-    // Preview community article if one is selected
+    // Load community article preview if one is selected
     {% if session.get('community_article_id') %}
-    $.ajax({
-        url: '/community_articles/get_current',
-        method: 'GET',
-        success: function(article) {
-            if (!article) {
-                $('#preview-community-article-container').html('<div class="alert alert-info">No community article data available.</div>');
-                return;
-            }
-            
-            let html = `
-            <div class="mb-3">
-                <h5>Title</h5>
-                <p class="border p-2 bg-light">${article.article_title || 'Untitled'}</p>
-            </div>
-            
-            <div class="mb-3">
-                <h5>Community</h5>
-                <p class="border p-2 bg-light">${article.community_name || 'Unknown'}</p>
-            </div>
-            
-            <div class="mb-3">
-                <h5>Article Content</h5>
-                <div class="border p-3 bg-light markdown-content">
-                    ${window.renderMarkdown(article.article_content || 'No content available')}
-                </div>
-            </div>
-            
-            <div class="mb-3">
-                <button id="copy-community-markdown-btn" class="btn btn-primary">Copy Raw Markdown</button>
-            </div>`;
-            
-            $('#preview-community-article-container').html(html);
-        },
-        error: function() {
-            $('#preview-community-article-container').html('<div class="alert alert-danger">Failed to load community article data.</div>');
-        }
-    });
-    
-    // Copy raw markdown for community article
-    $(document).on('click', '#copy-community-markdown-btn', function() {
-        $.ajax({
-            url: '/community_articles/get_current',
-            method: 'GET',
-            success: function(article) {
-                if (!article || !article.article_content) {
-                    alert('No community article content available to copy.');
-                    return;
-                }
-                
-                // Create a temporary textarea element to copy the text
-                const textarea = document.createElement('textarea');
-                textarea.value = article.article_content;
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-                
-                alert('Community article content copied to clipboard!');
-            },
-            error: function() {
-                alert('Failed to copy community article content.');
-            }
-        });
-    });
+    if (typeof window.loadViewCommunityArticle === 'function') {
+        window.loadViewCommunityArticle();
+    }
     {% endif %}
 });
 </script>

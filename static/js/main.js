@@ -293,6 +293,13 @@ $(document).ready(function () {
         window.loadViewArticle();
     });
 
+    $(document).on('shown.bs.collapse', '#previewCommunityArticleSection', function () {
+        console.log("Preview community article section opened - loading content");
+        if (typeof window.loadViewCommunityArticle === 'function') {
+            window.loadViewCommunityArticle();
+        }
+    });
+
     // Community article related functions
     $(document).ready(function () {
         // Load existing community articles
@@ -348,9 +355,93 @@ $(document).ready(function () {
             });
         }
 
+        // Global function to load and view community article
+        window.loadViewCommunityArticle = function() {
+            $.ajax({
+                url: '/community_articles/get_current',
+                method: 'GET',
+                success: function (article) {
+                    if (!article) {
+                        $('#preview-community-article-container').html('<div class="alert alert-info">No community article data available.</div>');
+                        return;
+                    }
+    
+                    let html = `
+                    <div class="mb-3">
+                        <h5>Title</h5>
+                        <p class="border p-2 bg-light">${article.article_title || 'Untitled'}</p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Community</h5>
+                        <p class="border p-2 bg-light">${article.community_name || 'Unknown'}</p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Article Content</h5>
+                        <div class="border p-3 bg-light markdown-content">
+                            ${window.renderMarkdown(article.article_content || 'No content available')}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <button id="copy-community-markdown-btn" class="btn btn-primary"><i class="bi bi-clipboard me-2"></i>Copy Raw Markdown</button>
+                    </div>`;
+    
+                    $('#preview-community-article-container').html(html);
+                    
+                    // Initialize copy button handler
+                    initializeCommunityMarkdownCopyButton();
+                },
+                error: function () {
+                    $('#preview-community-article-container').html('<div class="alert alert-danger">Failed to load community article data.</div>');
+                }
+            });
+        };
+
+        // Initialize community markdown copy button
+        function initializeCommunityMarkdownCopyButton() {
+            $(document).off('click', '#copy-community-markdown-btn').on('click', '#copy-community-markdown-btn', function() {
+                $.ajax({
+                    url: '/community_articles/get_current',
+                    method: 'GET',
+                    success: function(article) {
+                        if (!article || !article.article_content) {
+                            alert('No community article content available to copy.');
+                            return;
+                        }
+                        
+                        // Create a temporary textarea element to copy the text
+                        const textarea = document.createElement('textarea');
+                        textarea.value = article.article_content;
+                        document.body.appendChild(textarea);
+                        textarea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textarea);
+                        
+                        // Show feedback
+                        const btn = $('#copy-community-markdown-btn');
+                        const originalText = btn.text();
+                        btn.text('Copied!');
+                        setTimeout(() => {
+                            btn.text(originalText);
+                        }, 2000);
+                    },
+                    error: function() {
+                        alert('Failed to copy community article content.');
+                    }
+                });
+            });
+        }
+
         // Load initial community articles if we're on the community article page
         if ($('#community-articles-list').length > 0) {
             loadCommunityArticles();
+        }
+
+        // Load community article preview if it exists
+        if ($('#preview-community-article-container').length > 0) {
+            window.loadViewCommunityArticle();
         }
 
         // Load communities for the community article form
@@ -559,6 +650,9 @@ $(document).ready(function () {
                         .insertAfter(btn.parent())
                         .delay(5000)
                         .fadeOut(function () { $(this).remove(); });
+                    
+                    // Auto-save the generated content
+                    $('#save-community-article-btn').click();
                 },
                 error: function (xhr) {
                     btn.prop('disabled', false).text('Generate Community-Specific Content');
@@ -611,6 +705,11 @@ $(document).ready(function () {
                         .text('Community article saved successfully.')
                         .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>')
                         .insertAfter(btn.parent());
+                    
+                    // Update the preview if it exists
+                    if ($('#preview-community-article-container').length > 0) {
+                        window.loadViewCommunityArticle();
+                    }
                 },
                 error: function (xhr) {
                     btn.prop('disabled', false).text('Save Changes');

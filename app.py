@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, jsonify, session, redirect, url_for
+from flask import Flask, request, render_template, jsonify, session, redirect, url_for, send_from_directory
 import json
 import os
 from datetime import datetime
@@ -17,6 +17,11 @@ load_dotenv()  # Load environment variables from .env file
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY')
+
+# Route to serve images from the root directory
+@app.route('/images/<path:filename>')
+def serve_image(filename):
+    return send_from_directory('images', filename)
 
 # Custom Jinja filters
 @app.template_filter('from_json')
