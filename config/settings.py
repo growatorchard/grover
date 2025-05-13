@@ -17,12 +17,9 @@ CARE_AREAS = [
 ]
 
 JOURNEY_STAGES = [
-    "Awareness",
-    "Consideration", 
-    "Decision",
-    "Retention",
-    "Advocacy",
-    "Other"
+    "Awareness & Research",
+    "Consideration",
+    "Evaluation & Residency"
 ] 
 
 ARTICLE_CATEGORIES = ["Senior Living", "Health/Wellness", "Lifestyle", "Financial", "Other"]

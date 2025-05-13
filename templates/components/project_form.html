@@ -6,17 +6,17 @@
             <label for="project-name" class="form-label">Project Name</label>
             <input type="text" class="form-control" id="project-name" name="project_name" required>
         </div>
-        
+
         <div class="col-md-6 mb-3">
             <label for="journey-stage" class="form-label">Consumer Journey Stage</label>
             <select class="form-select" id="journey-stage" name="journey_stage" required>
-                <option value="Awareness & Research">Awareness & Research</option>
-                <option value="Consideration">Consideration</option>
-                <option value="Evaluation & Residency">Evaluation & Residency</option>
+                {% for stage in journey_stages %}
+                <option value="{{ stage }}">{{ stage }}</option>
+                {% endfor %}
             </select>
         </div>
     </div>
-    
+
     <div class="row">
         <div class="col-md-6 mb-3">
             <label for="category" class="form-label">Primary Content Category</label>
@@ -24,7 +24,7 @@
                 <!-- Options will be populated by JS based on journey stage -->
             </select>
         </div>
-        
+
         <div class="col-md-6 mb-3">
             <label for="care-areas" class="form-label">Care Area(s)</label>
             <select multiple class="form-select" id="care-areas" name="care_areas" required>
@@ -35,7 +35,7 @@
             <div class="form-text">Hold Ctrl/Cmd to select multiple options</div>
         </div>
     </div>
-    
+
     <div class="row">
         <div class="col-md-6 mb-3">
             <label for="format-type" class="form-label">Format Type</label>
@@ -45,7 +45,7 @@
                 {% endfor %}
             </select>
         </div>
-        
+
         <div class="col-md-6 mb-3">
             <label for="business-category" class="form-label">Business Category</label>
             <select class="form-select" id="business-category" name="business_category" required>
@@ -55,7 +55,7 @@
             </select>
         </div>
     </div>
-    
+
     <div class="row">
         <div class="col-md-6 mb-3">
             <label for="consumer-need" class="form-label">Consumer Need</label>
@@ -65,7 +65,7 @@
                 {% endfor %}
             </select>
         </div>
-        
+
         <div class="col-md-6 mb-3">
             <label for="tone-of-voice" class="form-label">Tone of Voice</label>
             <select class="form-select" id="tone-of-voice" name="tone_of_voice" required>
@@ -75,7 +75,7 @@
             </select>
         </div>
     </div>
-    
+
     <div class="row">
         <div class="col-md-6 mb-3">
             <label for="target-audiences" class="form-label">Target Audience(s)</label>
@@ -86,13 +86,13 @@
             </select>
             <div class="form-text">Hold Ctrl/Cmd to select multiple options</div>
         </div>
-        
+
         <div class="col-md-6 mb-3">
             <label for="topic" class="form-label">Topic (Required!)</label>
             <input type="text" class="form-control" id="topic" name="topic" required>
         </div>
     </div>
-    
+
     <div class="d-grid">
         <button type="submit" class="btn btn-primary">Create Project</button>
     </div>
@@ -104,19 +104,23 @@
     <div class="row">
         <div class="col-md-6 mb-3">
             <label for="project-name" class="form-label">Project Name</label>
-            <input type="text" class="form-control" id="project-name" name="project_name" value="{{ selected_project.name }}" required>
+            <input type="text" class="form-control" id="project-name" name="project_name"
+                value="{{ selected_project.name }}" required>
         </div>
-        
+
         <div class="col-md-6 mb-3">
             <label for="journey-stage" class="form-label">Consumer Journey Stage</label>
             <select class="form-select" id="journey-stage" name="journey_stage" required>
-                <option value="Awareness & Research" {% if selected_project.journey_stage == 'Awareness & Research' %}selected{% endif %}>Awareness & Research</option>
-                <option value="Consideration" {% if selected_project.journey_stage == 'Consideration' %}selected{% endif %}>Consideration</option>
-                <option value="Evaluation & Residency" {% if selected_project.journey_stage == 'Evaluation & Residency' %}selected{% endif %}>Evaluation & Residency</option>
+                <option value="Awareness & Research" {% if selected_project.journey_stage=='Awareness & Research'
+                    %}selected{% endif %}>Awareness & Research</option>
+                <option value="Consideration" {% if selected_project.journey_stage=='Consideration' %}selected{% endif
+                    %}>Consideration</option>
+                <option value="Evaluation & Residency" {% if selected_project.journey_stage=='Evaluation & Residency'
+                    %}selected{% endif %}>Evaluation & Residency</option>
             </select>
         </div>
     </div>
-    
+
     <div class="row">
         <div class="col-md-6 mb-3">
             <label for="category" class="form-label">Primary Content Category</label>
@@ -124,7 +128,7 @@
                 <!-- Options will be populated by JS based on journey stage -->
             </select>
         </div>
-        
+
         <div class="col-md-6 mb-3">
             <label for="care-areas" class="form-label">Care Area(s)</label>
             <select multiple class="form-select" id="care-areas" name="care_areas" required>
@@ -136,65 +140,71 @@
             <div class="form-text">Hold Ctrl/Cmd to select multiple options</div>
         </div>
     </div>
-    
+
     <div class="row">
         <div class="col-md-6 mb-3">
             <label for="format-type" class="form-label">Format Type</label>
             <select class="form-select" id="format-type" name="format_type" required>
                 {% for format in format_types %}
-                <option value="{{ format }}" {% if selected_project.format_type == format %}selected{% endif %}>{{ format }}</option>
+                <option value="{{ format }}" {% if selected_project.format_type==format %}selected{% endif %}>{{ format
+                    }}</option>
                 {% endfor %}
             </select>
         </div>
-        
+
         <div class="col-md-6 mb-3">
             <label for="business-category" class="form-label">Business Category</label>
             <select class="form-select" id="business-category" name="business_category" required>
                 {% for cat in business_categories %}
-                <option value="{{ cat }}" {% if selected_project.business_category == cat %}selected{% endif %}>{{ cat }}</option>
+                <option value="{{ cat }}" {% if selected_project.business_category==cat %}selected{% endif %}>{{ cat }}
+                </option>
                 {% endfor %}
             </select>
         </div>
     </div>
-    
+
     <div class="row">
         <div class="col-md-6 mb-3">
             <label for="consumer-need" class="form-label">Consumer Need</label>
             <select class="form-select" id="consumer-need" name="consumer_need" required>
                 {% for need in consumer_needs %}
-                <option value="{{ need }}" {% if selected_project.consumer_need == need %}selected{% endif %}>{{ need }}</option>
+                <option value="{{ need }}" {% if selected_project.consumer_need==need %}selected{% endif %}>{{ need }}
+                </option>
                 {% endfor %}
             </select>
         </div>
-        
+
         <div class="col-md-6 mb-3">
             <label for="tone-of-voice" class="form-label">Tone of Voice</label>
             <select class="form-select" id="tone-of-voice" name="tone_of_voice" required>
                 {% for tone in tone_of_voice %}
-                <option value="{{ tone }}" {% if selected_project.tone_of_voice == tone %}selected{% endif %}>{{ tone }}</option>
+                <option value="{{ tone }}" {% if selected_project.tone_of_voice==tone %}selected{% endif %}>{{ tone }}
+                </option>
                 {% endfor %}
             </select>
         </div>
     </div>
-    
+
     <div class="row">
         <div class="col-md-6 mb-3">
             <label for="target-audiences" class="form-label">Target Audience(s)</label>
             <select multiple class="form-select" id="target-audiences" name="target_audiences" required>
                 {% for audience in target_audiences %}
                 {% set target_audiences_list = selected_project.target_audiences|from_json %}
-                <option value="{{ audience }}" {% if audience in target_audiences_list %}selected{% endif %}>{{ audience }}</option>
+                <option value="{{ audience }}" {% if audience in target_audiences_list %}selected{% endif %}>{{ audience
+                    }}</option>
                 {% endfor %}
             </select>
             <div class="form-text">Hold Ctrl/Cmd to select multiple options</div>
         </div>
-        
+
         <div class="col-md-6 mb-3">
             <label for="topic" class="form-label">Topic (Required!)</label>
-            <input type="text" class="form-control" id="topic" name="topic" value="{{ selected_project.topic }}" required>
+            <input type="text" class="form-control" id="topic" name="topic" value="{{ selected_project.topic }}"
+                required>
         </div>
     </div>
-    
+
     <div class="d-grid">
         <button type="submit" class="btn btn-primary">Update Project</button>
     </div>
