@@ -1,12 +1,36 @@
-# Grover: LLM-based Content Generation Tool
+# Grover: Senior Living Content Generation Platform
 
-An AI-powered content generation application with SEMrush keyword research integration and multi-audience targeting capabilities.
+A Flask-based content generation platform specifically designed for senior living communities. The application helps create and manage content across different communities while maintaining SEO optimization and brand consistency.
+
+## Features
+
+- **Project Management**
+  - Create and manage content projects
+  - Define target audiences, care areas, and content parameters
+  - Track multiple articles per project
+
+- **Content Generation**
+  - AI-powered article generation
+  - SEO-optimized content creation
+  - Customizable article length and sections
+  - Support for multiple content formats
+
+- **Community-Specific Content**
+  - Generate community-specific versions of base articles
+  - Maintain consistent messaging across communities
+  - Automatic integration of community-specific details
+
+- **Keyword Research**
+  - SEMrush integration for keyword research
+  - Keyword difficulty and search volume analysis
+  - Keyword management within projects
 
 ## Prerequisites
 
-- Python 3.8 or higher
+- Python 3.9 or higher
+- SQLite3
 - OpenAI API key
-- SEMrush API key (optional, for keyword research functionality)
+- SEMrush API key (optional, for keyword research)
 
 ## Installation
 
@@ -32,70 +56,123 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-4. Set up configuration:
-
-Create a `.streamlit` directory in the project root:
-```bash
-mkdir .streamlit
+4. Create a `.env` file in the project root with the following variables:
+```env
+SECRET_KEY=your_secure_random_string_here
+FLASK_APP=app.py
+FLASK_ENV=development
+LLM_API_KEY=your_llm_api_key
+SEMRUSH_API_KEY=your_semrush_api_key  # Optional
 ```
 
-Create a `secrets.toml` file inside `.streamlit` directory with your API keys:
-```toml
-# .streamlit/secrets.toml
-
-OPENAI_API_KEY = "your-openai-api-key"
-SEMRUSH_API_KEY = "your-semrush-api-key"  # Optional
+5. Initialize the database:
+```bash
+python database/setup_database.py
 ```
 
 ## Running the Application
 
+### Option 1: Local Development
 1. Ensure your virtual environment is activated
-2. Run the Streamlit application:
+2. Start the Flask application:
 ```bash
-streamlit run app.py
+python app.py
 ```
-3. The applicaiton should open in your web browser automatically, if it does not,
- then you should open your web browser and navigate to `http://localhost:8501`
+3. Access the application at `http://localhost:5000`
 
-## Features
+### Option 2: Using Docker Compose (Recommended)
+1. Build and start the containers:
+```bash
+docker compose build
+docker compose up -d
+```
+2. Access the application at `http://localhost:5000`
 
-- Multi-audience content targeting
-- AI-powered topic generation
-- SEMrush keyword research integration
-- Content refinement and revision
-- Token usage tracking for API calls
-- Project management capabilities
+To stop the application:
+```bash
+docker compose down
+```
 
-## Usage Tips
+## Application Structure
 
-1. **Project Creation**:
-   - Create a new project with basic details
-   - Select multiple target audiences
-   - Define content parameters
+```
+/grover/
+├── app.py                   # Main application file
+├── config/                  # Configuration files
+├── database/               # Database managers
+├── services/               # Service modules
+├── utils/                  # Utility functions
+├── static/                 # Static files (CSS, JS)
+├── templates/              # HTML templates
+├── data/                   # Database files
+└── requirements.txt        # Dependencies
+```
 
-2. **Topic Generation**:
-   - Use the "Generate 5 Topics" feature for content ideas
-   - Topics are tailored to your selected parameters
+## Usage Guide
 
-3. **Content Generation**:
-   - Generate initial drafts
-   - Refine content with specific instructions
-   - Track token usage for each API call
+1. **Creating a Project**
+   - Click "New Project" in the sidebar
+   - Fill in project details (name, care areas, target audience, etc.)
+   - Save the project
 
-4. **Keyword Research** (requires SEMrush API key):
-   - Access keyword metrics
-   - Analyze search volume
-   - View keyword difficulty scores
+2. **Adding Keywords**
+   - Select your project
+   - Use the keyword research tool to find relevant keywords
+   - Add keywords to your project
 
-## Troubleshooting
+3. **Creating Content**
+   - Select your project
+   - Click "New Article"
+   - Set article parameters (length, sections, etc.)
+   - Generate content using AI
+   - Edit and refine as needed
 
-- If you encounter API errors, verify your API keys in `.streamlit/secrets.toml`
-- Ensure all dependencies are installed correctly
-- Check your Python version compatibility
-- Verify your internet connection for API calls
+4. **Creating Community-Specific Versions**
+   - Select your base article
+   - Choose a community
+   - Generate a community-specific version
+   - Review and edit the content
+
+## Development
+
+- The application uses Flask for the backend
+- Bootstrap 5 for the frontend
+- SQLite for data storage
+- OpenAI API for content generation
+- SEMrush API for keyword research
 
 ## Security Notes
 
-- Never commit your `secrets.toml` file to version control
-- Keep your API keys secure and rotate them periodically
-- Add `.streamlit/secrets.toml` to your `.gitignore` file
+- Never commit your `.env` file
+- Keep your API keys secure
+- Add `.env` to your `.gitignore` file
+- Regularly update dependencies
+
+## Troubleshooting
+
+1. **Database Issues**
+   - Ensure the `/data` directory exists and is writable
+   - Check database permissions
+   - Run database setup script if needed
+
+2. **API Issues**
+   - Verify API keys in `.env` file
+   - Check API rate limits
+   - Ensure internet connectivity
+
+3. **Application Errors**
+   - Check Flask debug output
+   - Verify all dependencies are installed
+   - Check file permissions
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+[License Here]
