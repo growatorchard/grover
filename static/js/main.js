@@ -780,7 +780,8 @@ $(document).ready(function () {
         $category.empty();
         if (selectedStage && journeyToCategories[selectedStage]) {
             journeyToCategories[selectedStage].forEach(cat => {
-                const isSelected = selectedCategory && selectedCategory === cat ? 'selected' : '';
+                // Check if this category matches the selected category, accounting for potential spaces
+                const isSelected = selectedCategory && selectedCategory.trim() === cat.trim() ? 'selected' : '';
                 $category.append(`<option value="${cat}" ${isSelected}>${cat}</option>`);
             });
         }
@@ -791,11 +792,14 @@ $(document).ready(function () {
         const $journeyStage = $('#journey-stage');
         const $category = $('#category');
         let initialStage = $journeyStage.val();
-        let initialCategory = $category.data('selected'); // for update form, if needed
+        // Get the selected category from the data attribute or the current value
+        let initialCategory = $category.data('selected') || $category.val();
         updateCategoryOptions(initialStage, initialCategory);
 
         $journeyStage.on('change', function() {
-            updateCategoryOptions($(this).val(), null);
+            // When journey stage changes, keep the current category if it's valid for the new stage
+            const currentCategory = $category.val();
+            updateCategoryOptions($(this).val(), currentCategory);
         });
     });
 });

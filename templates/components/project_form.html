@@ -20,7 +20,7 @@
     <div class="row">
         <div class="col-md-6 mb-3">
             <label for="category" class="form-label">Primary Content Category</label>
-            <select class="form-select" id="category" name="category" required>
+            <select class="form-select" id="category" name="category" required data-selected="{{ selected_project.category if selected_project else '' }}">
                 <!-- Options will be populated by JS based on journey stage -->
             </select>
         </div>
@@ -124,7 +124,7 @@
     <div class="row">
         <div class="col-md-6 mb-3">
             <label for="category" class="form-label">Primary Content Category</label>
-            <select class="form-select" id="category" name="category" required>
+            <select class="form-select" id="category" name="category" required data-selected="{{ selected_project.category if selected_project else '' }}">
                 <!-- Options will be populated by JS based on journey stage -->
             </select>
         </div>
