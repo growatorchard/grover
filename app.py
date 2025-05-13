@@ -1004,5 +1004,77 @@ def save_community_article_content():
         app.logger.error(f"Error saving community article: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/articles/refine', methods=['POST'])
+def refine_article():
+    """Refine article content based on user instructions."""
+    article_id = session.get('article_id')
+    if not article_id:
+        return jsonify({'error': 'No article selected'}), 400
+    
+    instructions = request.form.get('instructions', '').strip()
+    current_content = request.form.get('current_content', '').strip()
+    
+    if not instructions:
+        return jsonify({'error': 'No refinement instructions provided'}), 400
+    
+    if not current_content:
+        return jsonify({'error': 'No article content to refine'}), 400
+    
+    try:
+        # Get project details for context
+        project_id = session.get('project_id')
+        project_info = db.get_project(project_id)
+        
+        # Call LLM service to refine the content
+        prompt = f"""Please refine the following article content based on these instructions: {instructions}
+
+Current content:
+{current_content}
+
+Please return ONLY the refined article content, without any additional metadata, token information, or other text."""
+        
+        refined_content, _, _ = query_llm_api(session.get('selected_model'), prompt)
+        
+        # Clean up the response to ensure it only contains the article content
+        refined_content = refined_content.strip()
+        
+        return jsonify({
+            'refined_content': refined_content
+        })
+    except Exception as e:
+        app.logger.error(f"Error refining article: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/articles/fix_format', methods=['POST'])
+def fix_article_format():
+    """Fix the formatting of article content."""
+    article_id = session.get('article_id')
+    if not article_id:
+        return jsonify({'error': 'No article selected'}), 400
+    
+    current_content = request.form.get('current_content', '').strip()
+    
+    if not current_content:
+        return jsonify({'error': 'No article content to fix'}), 400
+    
+    try:
+        # Get project details for context
+        project_id = session.get('project_id')
+        project_info = db.get_project(project_id)
+        
+        # Call LLM service to fix the format
+        fixed_content = query_llm_api(session.get('selected_model'), f"Fix the formatting of the following content: {current_content}\n\nFixed content:")
+        
+        # Get token usage if available
+        token_usage = query_llm_api(session.get('selected_model'), "How many tokens were used in the last query?")
+        
+        return jsonify({
+            'fixed_content': fixed_content
+            
+        })
+    except Exception as e:
+        app.logger.error(f"Error fixing article format: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, host="0.0.0.0", port=5000)

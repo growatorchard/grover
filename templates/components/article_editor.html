@@ -64,30 +64,30 @@
 <!-- Refine Article Section -->
 <div class="card">
     <div class="card-header">
-        <h5 class="mb-0"><i class="bi bi-tools me-2"></i>Refine Article (Not working yet)</h5>
+        <h5 class="mb-0"><i class="bi bi-tools me-2"></i>Refine Article</h5>
     </div>
     <div class="card-body">
         <div class="mb-3">
             <label for="refine-instructions" class="form-label">Refine Instructions</label>
             <textarea class="form-control" id="refine-instructions" rows="4"
-                placeholder="Enter instructions for refining the article" disabled></textarea>
+                placeholder="Enter instructions for refining the article"></textarea>
         </div>
 
         <div class="d-flex gap-2">
-            <button id="refine-article-btn" class="btn btn-primary" disabled><i class="bi bi-brush me-2"></i>Refine Article</button>
-            <button id="fix-format-btn" class="btn btn-secondary" disabled><i class="bi bi-eraser me-2"></i>Fix Article Format</button>
+            <button id="refine-article-btn" class="btn btn-primary"><i class="bi bi-brush me-2"></i>Refine Article</button>
+            <button id="fix-format-btn" class="btn btn-secondary"><i class="bi bi-eraser me-2"></i>Fix Article Format</button>
         </div>
 
         <div id="refine-results" class="mt-3" style="display: none;">
             <div class="mb-3">
                 <h6>Refined Article:</h6>
                 <p class="small text-muted mb-2">Review the refined content before saving.</p>
-                <textarea id="refined-article-content" class="form-control" rows="12" disabled></textarea>
+                <textarea id="refined-article-content" class="form-control" rows="12"></textarea>
             </div>
 
             <div class="d-flex justify-content-between align-items-center">
                 <div id="refine-token-usage-info" class="small text-muted"></div>
-                <button id="save-refined-content-btn" class="btn btn-success" disabled><i class="bi bi-save me-2"></i>Save Refined Content</button>
+                <button id="save-refined-content-btn" class="btn btn-success"><i class="bi bi-save me-2"></i>Save Refined Content</button>
             </div>
         </div>
     </div>
@@ -310,49 +310,126 @@
             });
         });
 
-        // Initialize article handlers
-        function initializeArticleHandlers() {
-            // Save final article
-            $(document).off('click', '#save-final-article-btn').on('click', '#save-final-article-btn', function () {
-                const btn = $(this);
-                const articleContent = $('#final-article-content').val().trim();
+        // Refine Article Functionality
+        $('#refine-article-btn').click(function() {
+            const btn = $(this);
+            const instructions = $('#refine-instructions').val().trim();
+            const currentContent = $('#current-article-draft').val().trim();
 
-                btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
+            if (!instructions) {
+                alert('Please enter refinement instructions.');
+                return;
+            }
 
-                $.ajax({
-                    url: '{{ url_for('save_article_post_content') }}',
-                    method: 'POST',
-                    data: {
-                        article_content: articleContent
-                    },
-                    success: function (response) {
-                        btn.prop('disabled', false).text('Save Changes');
+            if (!currentContent) {
+                alert('Please generate article content first.');
+                return;
+            }
 
-                        if (response.error) {
-                            alert('Error: ' + response.error);
-                            return;
-                        }
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Refining...');
 
-                        // Show success message
-                        $('<div class="alert alert-success alert-dismissible fade show" role="alert">')
-                            .text('Article saved successfully.')
-                            .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>')
-                            .prependTo('#final-article-container');
-                        
-                        // Update the preview if it exists - use global function
-                        if (typeof window.loadViewArticle === 'function') {
-                            window.loadViewArticle();
-                        } else if (typeof loadViewArticle === 'function') {
-                            loadViewArticle();
-                        }
-                    },
-                    error: function (xhr) {
-                        btn.prop('disabled', false).text('Save Changes');
-                        alert('Failed to save article: ' + xhr.responseText);
+            $.ajax({
+                url: '/articles/refine',
+                method: 'POST',
+                data: {
+                    instructions: instructions,
+                    current_content: currentContent
+                },
+                success: function(response) {
+                    btn.prop('disabled', false).html('<i class="bi bi-brush me-2"></i>Refine Article');
+
+                    if (response.error) {
+                        alert('Error: ' + response.error);
+                        return;
                     }
-                });
+
+                    // Show refined content
+                    $('#refined-article-content').val(response.refined_content);
+                    $('#refine-results').show();
+                    
+                    // Update token usage info if available
+                    if (response.token_usage) {
+                        $('#refine-token-usage-info').text(`Token Usage: ${response.token_usage}`);
+                    }
+                },
+                error: function(xhr) {
+                    btn.prop('disabled', false).html('<i class="bi bi-brush me-2"></i>Refine Article');
+                    alert('Failed to refine article: ' + xhr.responseText);
+                }
             });
-        }
+        });
+
+        // Fix Format Functionality
+        $('#fix-format-btn').click(function() {
+            const btn = $(this);
+            const currentContent = $('#current-article-draft').val().trim();
+
+            if (!currentContent) {
+                alert('Please generate article content first.');
+                return;
+            }
+
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Fixing...');
+
+            $.ajax({
+                url: '/articles/fix_format',
+                method: 'POST',
+                data: {
+                    current_content: currentContent
+                },
+                success: function(response) {
+                    btn.prop('disabled', false).html('<i class="bi bi-eraser me-2"></i>Fix Article Format');
+
+                    if (response.error) {
+                        alert('Error: ' + response.error);
+                        return;
+                    }
+
+                    // Show fixed content
+                    $('#refined-article-content').val(response.fixed_content);
+                    $('#refine-results').show();
+                    
+                    // Update token usage info if available
+                    if (response.token_usage) {
+                        $('#refine-token-usage-info').text(`Token Usage: ${response.token_usage}`);
+                    }
+                },
+                error: function(xhr) {
+                    btn.prop('disabled', false).html('<i class="bi bi-eraser me-2"></i>Fix Article Format');
+                    alert('Failed to fix article format: ' + xhr.responseText);
+                }
+            });
+        });
+
+        // Save Refined Content
+        $('#save-refined-content-btn').click(function() {
+            const btn = $(this);
+            const refinedContent = $('#refined-article-content').val().trim();
+
+            if (!refinedContent) {
+                alert('No refined content to save.');
+                return;
+            }
+
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
+
+            // Update the current article draft with the refined content
+            $('#current-article-draft').val(refinedContent);
+            
+            // Hide the refine results section
+            $('#refine-results').hide();
+            
+            // Enable the save article content button
+            $('#save-article-content-btn').prop('disabled', false);
+            
+            btn.prop('disabled', false).html('<i class="bi bi-save me-2"></i>Save Refined Content');
+            
+            // Show success message
+            $('<div class="alert alert-success mt-3" role="alert">Refined content has been applied to the article draft.</div>')
+                .insertAfter(btn.parent())
+                .delay(3000)
+                .fadeOut(function() { $(this).remove(); });
+        });
 
         // Load articles on page load
         $(document).ready(function() {
