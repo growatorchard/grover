@@ -15,6 +15,29 @@ from utils.json_cleaner import clean_json_response
 
 load_dotenv()  # Load environment variables from .env file
 
+# Mapping of journey stages to their available categories
+JOURNEY_STAGE_CATEGORIES = {
+    "Awareness & Research": [
+        "Affordability and Pricing",
+        "Planning Ahead",
+        "Caregiver Education"
+    ],
+    "Consideration": [
+        "Affordability and Pricing",
+        "Healthcare",
+        "Senior Living Features and Services",
+        "Dining and Nutrition",
+        "Safety and Security",
+        "Lifestyle"
+    ],
+    "Evaluation & Residency": [
+        "Affordability and Pricing",
+        "Lifestyle",
+        "Innovation",
+        "Resident and Family Experience"
+    ]
+}
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY')
 
@@ -130,6 +153,7 @@ def index():
                           business_categories=BUSINESS_CATEGORIES,
                           consumer_needs=CONSUMER_NEEDS,
                           tone_of_voice=TONE_OF_VOICE,
+                          journey_stage_categories=JOURNEY_STAGE_CATEGORIES,
                           active_section=active_section)
 
 @app.route('/set_model', methods=['POST'])
