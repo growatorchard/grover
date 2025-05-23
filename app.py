@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, jsonify, session, redirect, url_for
+from flask import Flask, request, render_template, jsonify, session, redirect, url_for, send_from_directory
 import json
 import os
 from datetime import datetime
@@ -15,8 +15,36 @@ from utils.json_cleaner import clean_json_response
 
 load_dotenv()  # Load environment variables from .env file
 
+# Mapping of journey stages to their available categories
+JOURNEY_STAGE_CATEGORIES = {
+    "Awareness & Research": [
+        "Affordability and Pricing",
+        "Planning Ahead",
+        "Caregiver Education"
+    ],
+    "Consideration": [
+        "Affordability and Pricing",
+        "Healthcare",
+        "Senior Living Features and Services",
+        "Dining and Nutrition",
+        "Safety and Security",
+        "Lifestyle"
+    ],
+    "Evaluation & Residency": [
+        "Affordability and Pricing",
+        "Lifestyle",
+        "Innovation",
+        "Resident and Family Experience"
+    ]
+}
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY')
+
+# Route to serve images from the root directory
+@app.route('/images/<path:filename>')
+def serve_image(filename):
+    return send_from_directory('images', filename)
 
 # Custom Jinja filters
 @app.template_filter('from_json')
@@ -73,6 +101,7 @@ def index():
     current_article = None
     community_articles = []
     current_community_article = None
+    active_section = request.args.get('section', None)
     
     if session.get('project_id'):
         selected_project = db.get_project(session['project_id'])
@@ -123,7 +152,9 @@ def index():
                           format_types=FORMAT_TYPES,
                           business_categories=BUSINESS_CATEGORIES,
                           consumer_needs=CONSUMER_NEEDS,
-                          tone_of_voice=TONE_OF_VOICE)
+                          tone_of_voice=TONE_OF_VOICE,
+                          journey_stage_categories=JOURNEY_STAGE_CATEGORIES,
+                          active_section=active_section)
 
 @app.route('/set_model', methods=['POST'])
 def set_model():
@@ -864,7 +895,7 @@ def select_community_article():
     if community_article_id == 'new':
         # Clear community article selection to show the creation form
         session['community_article_id'] = None
-        return redirect(url_for('index'))
+        return redirect(url_for('index', section='community'))
     else:
         # Select existing community article
         try:
@@ -873,7 +904,7 @@ def select_community_article():
         except (ValueError, TypeError):
             session['community_article_id'] = None
     
-    return redirect(url_for('index'))
+    return redirect(url_for('index', section='community'))
 
 @app.route('/community_articles/list')
 def list_community_articles():
@@ -945,7 +976,7 @@ def delete_community_article():
             db.delete_community_article(community_article_id)
             session['community_article_id'] = None
             # return jsonify({'success': True})
-            return redirect(url_for('index'))
+            return redirect(url_for('index', section='community'))
         except Exception as e:
             app.logger.error(f"Error deleting community article: {str(e)}")
             return jsonify({'error': str(e)}), 500
@@ -995,6 +1026,78 @@ def save_community_article_content():
         return jsonify({'success': True})
     except Exception as e:
         app.logger.error(f"Error saving community article: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/articles/refine', methods=['POST'])
+def refine_article():
+    """Refine article content based on user instructions."""
+    article_id = session.get('article_id')
+    if not article_id:
+        return jsonify({'error': 'No article selected'}), 400
+    
+    instructions = request.form.get('instructions', '').strip()
+    current_content = request.form.get('current_content', '').strip()
+    
+    if not instructions:
+        return jsonify({'error': 'No refinement instructions provided'}), 400
+    
+    if not current_content:
+        return jsonify({'error': 'No article content to refine'}), 400
+    
+    try:
+        # Get project details for context
+        project_id = session.get('project_id')
+        project_info = db.get_project(project_id)
+        
+        # Call LLM service to refine the content
+        prompt = f"""Please refine the following article content based on these instructions: {instructions}
+
+Current content:
+{current_content}
+
+Please return ONLY the refined article content, without any additional metadata, token information, or other text."""
+        
+        refined_content, _, _ = query_llm_api(session.get('selected_model'), prompt)
+        
+        # Clean up the response to ensure it only contains the article content
+        refined_content = refined_content.strip()
+        
+        return jsonify({
+            'refined_content': refined_content
+        })
+    except Exception as e:
+        app.logger.error(f"Error refining article: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/articles/fix_format', methods=['POST'])
+def fix_article_format():
+    """Fix the formatting of article content."""
+    article_id = session.get('article_id')
+    if not article_id:
+        return jsonify({'error': 'No article selected'}), 400
+    
+    current_content = request.form.get('current_content', '').strip()
+    
+    if not current_content:
+        return jsonify({'error': 'No article content to fix'}), 400
+    
+    try:
+        # Get project details for context
+        project_id = session.get('project_id')
+        project_info = db.get_project(project_id)
+        
+        # Call LLM service to fix the format
+        fixed_content = query_llm_api(session.get('selected_model'), f"Fix the formatting of the following content: {current_content}\n\nFixed content:")
+        
+        # Get token usage if available
+        token_usage = query_llm_api(session.get('selected_model'), "How many tokens were used in the last query?")
+        
+        return jsonify({
+            'fixed_content': fixed_content
+            
+        })
+    except Exception as e:
+        app.logger.error(f"Error fixing article format: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':

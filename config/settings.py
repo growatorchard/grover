@@ -13,16 +13,15 @@ CARE_AREAS = [
     "Independent Living",
     "Assisted Living", 
     "Memory Care",
-    "Skilled Nursing"
+    "Skilled Nursing",
+    "Personal Care",
+    "Short Term Rehab"
 ]
 
 JOURNEY_STAGES = [
-    "Awareness",
-    "Consideration", 
-    "Decision",
-    "Retention",
-    "Advocacy",
-    "Other"
+    "Awareness & Research",
+    "Consideration",
+    "Evaluation & Residency"
 ] 
 
 ARTICLE_CATEGORIES = ["Senior Living", "Health/Wellness", "Lifestyle", "Financial", "Other"]
