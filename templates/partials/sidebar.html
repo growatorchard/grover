@@ -122,7 +122,7 @@ $(document).ready(function() {
             
             if (data.length > 0) {
                 $.each(data, function(index, article) {
-                    var selected = {{ session.get('community_article_id', 0) }} == article.id ? 'selected' : '';
+                    var selected = {{ session.get('community_article_id')|tojson }} == article.id ? 'selected' : '';
                     select.append('<option value="' + article.id + '" ' + selected + '>' + article.community_name + ' (ID: ' + article.id + ')</option>');
                 });
             }

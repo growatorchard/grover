@@ -451,7 +451,6 @@ $(document).ready(function () {
                 method: 'GET',
                 success: function (communities) {
                     const select = $('#community-select');
-                    console.log('Communities:', communities);
 
                     if (communities.length === 0) {
                         select.html('<option value="">No communities available</option>');
