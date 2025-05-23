@@ -84,6 +84,7 @@ $(document).ready(function () {
             data: { article_id: articleId },
             success: function () {
                 loadExistingArticles();
+                window.location.reload();
             },
             error: function (xhr) {
                 alert('Failed to delete article: ' + xhr.responseText);
