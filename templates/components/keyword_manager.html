@@ -95,6 +95,9 @@
 </div>
 
 <script>
+    // Global set to track existing keywords (case-insensitive)
+    let existingKeywordsSet = new Set();
+
     document.addEventListener('DOMContentLoaded', function () {
         // Ensure jQuery is loaded
         if (typeof $ === 'undefined') {
@@ -198,18 +201,30 @@
         });
 
         $(document).on('click', '.add-lookup-results-keyword', function () {
-            const keywordData = $(this).data('keyword');
+            const button = $(this);
+            const keywordData = button.data('keyword');
             if (keywordData) {
-                saveKeyword(keywordData.Ph, keywordData.Nq, keywordData.Kd);
+                saveKeyword(keywordData.Ph, keywordData.Nq, keywordData.Kd, function() {
+                    // Disable button after successful save
+                    button.prop('disabled', true);
+                    button.removeClass('btn-success').addClass('btn-secondary');
+                    button.html('<i class="bi bi-check"></i> Added');
+                });
             }
         });
 
         // Add event handler for the main keyword button
         $(document).on('click', '.add-main-keyword', function () {
+            const button = $(this);
             const seedPhraseInfo = $('#semrush-seed-keyword-info');
             const keywordData = seedPhraseInfo.data('keyword');
             if (keywordData) {
-                saveKeyword(keywordData.Ph, keywordData.Nq, keywordData.Kd);
+                saveKeyword(keywordData.Ph, keywordData.Nq, keywordData.Kd, function() {
+                    // Disable button after successful save
+                    button.prop('disabled', true);
+                    button.removeClass('btn-success').addClass('btn-secondary');
+                    button.html('<i class="bi bi-check"></i> Added');
+                });
             }
         });
     });
@@ -220,6 +235,12 @@
             method: 'GET',
             success: function (keywords) {
                 const container = $('#existing-keywords-container');
+                
+                // Clear and rebuild the existing keywords set
+                existingKeywordsSet.clear();
+                keywords.forEach(kw => {
+                    existingKeywordsSet.add(kw.keyword.toLowerCase());
+                });
 
                 if (keywords.length === 0) {
                     container.html('<div class="alert alert-info">No keywords yet.</div>');
@@ -234,11 +255,14 @@
                 ${kw.search_volume ? ` (Vol=${kw.search_volume}` : ''}
                 ${kw.keyword_difficulty ? `, Diff=${kw.keyword_difficulty}` : ''}
                 ${kw.search_volume ? ')' : ''}
-                <button type="button" class="btn btn-sm btn-danger delete-keyword" data-keyword-id="${kw.id}">X</button>
+                <button type="button" class="btn btn-sm btn-danger delete-keyword" data-keyword-id="${kw.id}" data-keyword-text="${kw.keyword}">X</button>
             </div>`;
                 });
 
                 container.html(html);
+                
+                // Update button states in SEMrush results if they exist
+                updateSemrushButtonStates();
             },
             error: function () {
                 $('#existing-keywords-container').html('<div class="alert alert-danger">Failed to load keywords. Please try again.</div>');
@@ -246,7 +270,7 @@
         });
     }
 
-    function saveKeyword(keyword, searchVolume = null, keywordDifficulty = null) {
+    function saveKeyword(keyword, searchVolume = null, keywordDifficulty = null, successCallback = null) {
         $.ajax({
             url: '/keywords/add',
             method: 'POST',
@@ -256,7 +280,12 @@
                 keyword_difficulty: keywordDifficulty
             },
             success: function () {
+                // Add to the set immediately
+                existingKeywordsSet.add(keyword.toLowerCase());
                 loadExistingKeywords();
+                if (successCallback) {
+                    successCallback();
+                }
             },
             error: function (xhr) {
                 alert('Failed to save keyword: ' + xhr.responseText);
@@ -269,15 +298,60 @@
             return;
         }
 
+        // Get the keyword text before deletion
+        const keywordText = $(`.delete-keyword[data-keyword-id="${keywordId}"]`).data('keyword-text');
+
         $.ajax({
             url: '/keywords/delete',
             method: 'POST',
             data: { keyword_id: keywordId },
             success: function () {
+                // Remove from the set
+                if (keywordText) {
+                    existingKeywordsSet.delete(keywordText.toLowerCase());
+                }
                 loadExistingKeywords();
+                
+                // Re-enable buttons in SEMrush results if they exist
+                updateSemrushButtonStates();
             },
             error: function (xhr) {
                 alert('Failed to delete keyword: ' + xhr.responseText);
+            }
+        });
+    }
+
+    function updateSemrushButtonStates() {
+        // Update main keyword button
+        const seedPhraseInfo = $('#semrush-seed-keyword-info');
+        const seedKeywordData = seedPhraseInfo.data('keyword');
+        if (seedKeywordData && seedKeywordData.Ph) {
+            const mainButton = $('.add-main-keyword');
+            if (existingKeywordsSet.has(seedKeywordData.Ph.toLowerCase())) {
+                mainButton.prop('disabled', true);
+                mainButton.removeClass('btn-success').addClass('btn-secondary');
+                mainButton.html('<i class="bi bi-check"></i> Added');
+            } else {
+                mainButton.prop('disabled', false);
+                mainButton.removeClass('btn-secondary').addClass('btn-success');
+                mainButton.html('<i class="bi bi-plus"></i> Add');
+            }
+        }
+
+        // Update lookup result buttons
+        $('.add-lookup-results-keyword').each(function() {
+            const button = $(this);
+            const keywordData = button.data('keyword');
+            if (keywordData && keywordData.Ph) {
+                if (existingKeywordsSet.has(keywordData.Ph.toLowerCase())) {
+                    button.prop('disabled', true);
+                    button.removeClass('btn-success').addClass('btn-secondary');
+                    button.html('<i class="bi bi-check"></i> Added');
+                } else {
+                    button.prop('disabled', false);
+                    button.removeClass('btn-secondary').addClass('btn-success');
+                    button.html('<i class="bi bi-plus"></i> Add');
+                }
             }
         });
     }
@@ -325,14 +399,20 @@
 
                 // Stringify the keyword data and escape quotes
                 const keywordJson = JSON.stringify(rk).replace(/"/g, '&quot;');
+                
+                // Check if keyword already exists
+                const isExisting = existingKeywordsSet.has((rk.Ph || '').toLowerCase());
+                const buttonClass = isExisting ? 'btn-secondary' : 'btn-success';
+                const buttonText = isExisting ? '<i class="bi bi-check"></i> Added' : '<i class="bi bi-plus"></i> Add';
+                const disabled = isExisting ? 'disabled' : '';
 
                 html += `
 <li class="list-group-item d-flex justify-content-between align-items-center">
     <div>
         <strong>${rk.Ph || 'N/A'}</strong> (Vol=${rk.Nq || 'N/A'}, Diff=${rk.Kd || 'N/A'}, Intent=${intentDesc})
     </div>
-    <button type="button" class="btn btn-sm btn-success add-lookup-results-keyword" data-keyword='${keywordJson}'>
-        <i class="bi bi-plus"></i> Add
+    <button type="button" class="btn btn-sm ${buttonClass} add-lookup-results-keyword" data-keyword='${keywordJson}' ${disabled}>
+        ${buttonText}
     </button>
 </li>`;
             });
@@ -340,6 +420,9 @@
             $('#semrush-results-keywords-list').html(html);
             $('#semrush-results-keywords-container').show();
         }
+        
+        // Update button states after displaying results
+        updateSemrushButtonStates();
     }
 
 </script>

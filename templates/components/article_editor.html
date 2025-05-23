@@ -4,7 +4,8 @@
         <h5 class="mb-0"><i class="bi bi-file-earmark-text me-2"></i>Generate Article Title & Outline</h5>
     </div>
     <div class="card-body">
-        <button id="generate-title-outline-btn" class="btn btn-primary"><i class="bi bi-lightning me-2"></i>Generate Article Title & Outline</button>
+        <button id="generate-title-outline-btn" class="btn btn-primary"><i class="bi bi-lightning me-2"></i>Generate
+            Article Title & Outline</button>
 
         <div id="title-outline-results" class="mt-3" style="display: none;">
             <div class="mb-3">
@@ -17,7 +18,8 @@
                 <div id="article-outline-result" class="p-3 bg-light border rounded"></div>
             </div>
 
-            <button id="save-title-outline-btn" class="btn btn-success mt-2"><i class="bi bi-save me-2"></i>Save Title & Outline</button>
+            <button id="save-title-outline-btn" class="btn btn-success mt-2"><i class="bi bi-save me-2"></i>Save Title &
+                Outline</button>
 
             <div id="token-usage-info" class="small text-muted mt-2"></div>
 
@@ -36,12 +38,14 @@
         <h5 class="mb-0"><i class="bi bi-newspaper me-2"></i>Generate Full Article</h5>
     </div>
     <div class="card-body">
-        <button id="generate-article-btn" class="btn btn-primary"><i class="bi bi-stars me-2"></i>Generate Article from Outline</button>
+        <button id="generate-article-btn" class="btn btn-primary"><i class="bi bi-stars me-2"></i>Generate Article from
+            Outline</button>
 
         <div id="article-generation-progress" class="mt-3" style="display: none;">
             <div class="progress mb-2">
-                <div id="generation-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
-                    role="progressbar" style="width: 100%"></div>
+                <div id="generation-progress-bar"
+                    class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar"
+                    style="width: 100%"></div>
             </div>
             <div id="generation-status" class="small text-muted">Generating article content...</div>
         </div>
@@ -55,7 +59,8 @@
 
             <div class="d-flex justify-content-between align-items-center mt-3">
                 <div id="article-token-usage-info" class="small text-muted"></div>
-                <button id="save-article-content-btn" class="btn btn-success"><i class="bi bi-save me-2"></i>Save Article Content</button>
+                <button id="save-article-content-btn" class="btn btn-success"><i class="bi bi-save me-2"></i>Save
+                    Article Content</button>
             </div>
         </div>
     </div>
@@ -74,8 +79,10 @@
         </div>
 
         <div class="d-flex gap-2">
-            <button id="refine-article-btn" class="btn btn-primary"><i class="bi bi-brush me-2"></i>Refine Article</button>
-            <button id="fix-format-btn" class="btn btn-secondary"><i class="bi bi-eraser me-2"></i>Fix Article Format</button>
+            <button id="refine-article-btn" class="btn btn-primary"><i class="bi bi-brush me-2"></i>Refine
+                Article</button>
+            <button id="fix-format-btn" class="btn btn-secondary"><i class="bi bi-eraser me-2"></i>Fix Article
+                Format</button>
         </div>
 
         <div id="refine-results" class="mt-3" style="display: none;">
@@ -87,7 +94,8 @@
 
             <div class="d-flex justify-content-between align-items-center">
                 <div id="refine-token-usage-info" class="small text-muted"></div>
-                <button id="save-refined-content-btn" class="btn btn-success"><i class="bi bi-save me-2"></i>Save Refined Content</button>
+                <button id="save-refined-content-btn" class="btn btn-success"><i class="bi bi-save me-2"></i>Update
+                    Generated Content with Refined Content</button>
             </div>
         </div>
     </div>
@@ -189,11 +197,8 @@
                         return;
                     }
 
-                    // Show success message
-                    alert('Title and outline saved successfully!');
-
                     // Add option to refresh the page or just show a success message
-                    $('<div class="alert alert-success mt-3" role="alert">Title and outline saved successfully! <a href="#" onclick="location.reload()">Refresh page</a> to see update in the form above.</div>')
+                    $('<div class="alert alert-success mt-3" role="alert">Title and outline saved successfully!</div>')
                         .insertAfter(btn);
                 },
                 error: function (xhr) {
@@ -296,7 +301,7 @@
                     } else if (typeof loadViewArticle === 'function') {
                         loadViewArticle();
                     }
-                    
+
                     if (typeof window.loadFinalArticle === 'function') {
                         window.loadFinalArticle();
                     } else if (typeof loadFinalArticle === 'function') {
@@ -311,7 +316,7 @@
         });
 
         // Refine Article Functionality
-        $('#refine-article-btn').click(function() {
+        $('#refine-article-btn').click(function () {
             const btn = $(this);
             const instructions = $('#refine-instructions').val().trim();
             const currentContent = $('#current-article-draft').val().trim();
@@ -335,7 +340,7 @@
                     instructions: instructions,
                     current_content: currentContent
                 },
-                success: function(response) {
+                success: function (response) {
                     btn.prop('disabled', false).html('<i class="bi bi-brush me-2"></i>Refine Article');
 
                     if (response.error) {
@@ -346,13 +351,13 @@
                     // Show refined content
                     $('#refined-article-content').val(response.refined_content);
                     $('#refine-results').show();
-                    
+
                     // Update token usage info if available
                     if (response.token_usage) {
                         $('#refine-token-usage-info').text(`Token Usage: ${response.token_usage}`);
                     }
                 },
-                error: function(xhr) {
+                error: function (xhr) {
                     btn.prop('disabled', false).html('<i class="bi bi-brush me-2"></i>Refine Article');
                     alert('Failed to refine article: ' + xhr.responseText);
                 }
@@ -360,7 +365,7 @@
         });
 
         // Fix Format Functionality
-        $('#fix-format-btn').click(function() {
+        $('#fix-format-btn').click(function () {
             const btn = $(this);
             const currentContent = $('#current-article-draft').val().trim();
 
@@ -377,7 +382,7 @@
                 data: {
                     current_content: currentContent
                 },
-                success: function(response) {
+                success: function (response) {
                     btn.prop('disabled', false).html('<i class="bi bi-eraser me-2"></i>Fix Article Format');
 
                     if (response.error) {
@@ -388,13 +393,13 @@
                     // Show fixed content
                     $('#refined-article-content').val(response.fixed_content);
                     $('#refine-results').show();
-                    
+
                     // Update token usage info if available
                     if (response.token_usage) {
                         $('#refine-token-usage-info').text(`Token Usage: ${response.token_usage}`);
                     }
                 },
-                error: function(xhr) {
+                error: function (xhr) {
                     btn.prop('disabled', false).html('<i class="bi bi-eraser me-2"></i>Fix Article Format');
                     alert('Failed to fix article format: ' + xhr.responseText);
                 }
@@ -402,7 +407,7 @@
         });
 
         // Save Refined Content
-        $('#save-refined-content-btn').click(function() {
+        $('#save-refined-content-btn').click(function () {
             const btn = $(this);
             const refinedContent = $('#refined-article-content').val().trim();
 
@@ -415,29 +420,29 @@
 
             // Update the current article draft with the refined content
             $('#current-article-draft').val(refinedContent);
-            
-            // Hide the refine results section
-            $('#refine-results').hide();
-            
+
             // Enable the save article content button
             $('#save-article-content-btn').prop('disabled', false);
-            
-            btn.prop('disabled', false).html('<i class="bi bi-save me-2"></i>Save Refined Content');
-            
-            // Show success message
+
+            btn.prop('disabled', false).html('<i class="bi bi-save me-2"></i>Update Generated Content with Refined Content');
+
             $('<div class="alert alert-success mt-3" role="alert">Refined content has been applied to the article draft.</div>')
-                .insertAfter(btn.parent())
-                .delay(3000)
-                .fadeOut(function() { $(this).remove(); });
+                .insertAfter('#refine-results')
+                .delay(1500)
+                .fadeOut(function () {
+                    $(this).remove();
+                    // Hide the refine results section AFTER the message fades out
+                    $('#refine-results').hide();
+                });
         });
 
         // Load articles on page load
-        $(document).ready(function() {
+        $(document).ready(function () {
             // Load final article if container exists
             if ($('#final-article-container').length > 0) {
                 loadFinalArticle();
             }
-            
+
             // Load preview article if container exists
             if ($('#preview-article-container').length > 0) {
                 loadViewArticle();
