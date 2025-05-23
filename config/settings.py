@@ -13,7 +13,9 @@ CARE_AREAS = [
     "Independent Living",
     "Assisted Living", 
     "Memory Care",
-    "Skilled Nursing"
+    "Skilled Nursing",
+    "Personal Care",
+    "Short Term Rehab"
 ]
 
 JOURNEY_STAGES = [
